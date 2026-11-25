@@ -24,12 +24,12 @@ if (![string]::IsNullOrWhiteSpace($env:KABRA_CLIENT_SERIAL)) {
 $cfg | ConvertTo-Json -Depth 100 | Set-Content -Path $settingsPath -Encoding utf8
 
 $project = Get-Content $projectPath -Raw
-$project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<ApplicationId>com.kabraonline.nativepreview</ApplicationId>')
-$project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.1-preview</ApplicationDisplayVersion>')
+$project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<ApplicationId>com.kabraonline.mobilepreview</ApplicationId>')
+$project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.2-kabra</ApplicationDisplayVersion>')
 Set-Content $projectPath -Value $project -Encoding utf8
 $manifest = Get-Content $manifestPath -Raw
 $manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.nativepreview"')
-$manifest = $manifest.Replace('android:label="MuMono"', 'android:label="KABRA ONLINE Preview"')
+$manifest = $manifest.Replace('android:label="MuMono"', 'android:label="MU KABRA ONLINE"')
 Set-Content $manifestPath -Value $manifest -Encoding utf8
 Write-Output "Preparada configuracion de compilacion. Endpoint ConnectServer: ${hostname}:${port}."
 Write-Output "NOTA: esta preparacion no verifica la conectividad ni el protocolo Louis 31."
@@ -58,3 +58,65 @@ $replacement += "`n#endif`n`n"
 $profiler = $profiler.Substring(0, $startAt) + $replacement + $profiler.Substring($endAt)
 Set-Content -Path $profilerPath -Value $profiler -Encoding utf8
 Write-Output 'GPU profiler parcheado: diagnostico de sincronizacion omitido en Android.'
+
+
+# Identidad visible de MU KABRA (sin cambiar el motor ni el protocolo)
+$strings = Join-Path $ClientDirectory 'MuAndroid/Resources/Values/Strings.xml'
+if (!(Test-Path $strings)) { throw "Missing Android Strings.xml" }
+$str = Get-Content $strings -Raw
+$str = $str.Replace('<string name="app_name">MuMono</string>', '<string name="app_name">MU KABRA ONLINE</string>')
+Set-Content -Path $strings -Value $str -Encoding utf8
+
+$loginDialog = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/LoginDialog.cs'
+if (!(Test-Path $loginDialog)) { throw "Missing LoginDialog.cs" }
+$login = Get-Content $loginDialog -Raw
+$login = $login.Replace('Text = "MU Online",', 'Text = "MU KABRA ONLINE",')
+$login = $login.Replace('Text = "OpenMU Server 1",', 'Text = "KABRA ONLINE | PVP",')
+Set-Content $loginDialog -Value $login -Encoding utf8
+
+# Put a fixed KABRA brand header on top of the login world.
+$loginScene = Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+if (!(Test-Path $loginScene)) { throw "Missing LoginScene.cs" }
+$ls = Get-Content $loginScene -Raw
+$needle = '            Controls.Add(loginWorld);'
+if (!$ls.Contains($needle)) { throw "Expected login world insertion not found" }
+$replace = @'
+            Controls.Add(loginWorld);
+            Controls.Add(new LabelControl
+            {
+                Text = "MU KABRA ONLINE",
+                Align = ControlAlign.HorizontalCenter,
+                Y = 18,
+                FontSize = 30,
+                TextColor = new Color(249, 209, 119),
+                Visible = true
+            });
+'@
+$ls = $ls.Replace($needle,$replace.TrimEnd())
+Set-Content $loginScene -Value $ls -Encoding utf8
+
+$muLogo = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/MuLogo.cs'
+$logoSource = @'
+using Client.Main.Models;
+using Microsoft.Xna.Framework;
+namespace Client.Main.Controls.UI.Login
+{
+    // Original engine-compatible public UI branding for KABRA.
+    public class MuLogo : UIControl
+    {
+        public MuLogo()
+        {
+            Controls.Add(new LabelControl
+            {
+                Text = "MU KABRA ONLINE",
+                Align = ControlAlign.HorizontalCenter,
+                FontSize = 30,
+                TextColor = new Color(252, 204, 115)
+            });
+        }
+    }
+}
+'@
+Set-Content $muLogo -Value $logoSource -Encoding utf8
+
+Write-Output 'Identidad de KABRA aplicada a Android, login y logo UI.'
