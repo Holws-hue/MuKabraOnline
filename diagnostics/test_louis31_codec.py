@@ -1,5 +1,5 @@
 import unittest
-from louis31_codec import decode_frame, read_one_frame_from_buffer, LouisFrameError
+from louis31_codec import decode_frame, encode_frame, read_one_frame_from_buffer, LouisFrameError
 
 
 class LouisWireCodecTest(unittest.TestCase):
@@ -8,13 +8,16 @@ class LouisWireCodecTest(unittest.TestCase):
         decoded = decode_frame(wire)
         self.assertEqual(decoded[:4], bytes.fromhex("C1 0C F1 00"))
         self.assertEqual(len(decoded), 12)
+        self.assertEqual(decoded[-5:], b"10405")
+        self.assertEqual(encode_frame(decoded), wire)
 
     def test_client_prelogin_observed(self):
         wire = bytes.fromhex(
             "D2 07 FF 9E 37 C4 4E CE 30 1C F8 2C 17 84 C9 0E 22 C6 D2 62 BD 47 E3 D9"
         )
         decoded = decode_frame(wire)
-        self.assertEqual(decoded[:3], bytes.fromhex("C3 18 10"))
+        self.assertEqual(decoded[:3], bytes.fromhex("C3 18 F0"))
+        self.assertEqual(encode_frame(decoded), wire)
         self.assertEqual(len(decoded), 24)
 
     def test_fragmented_tcp(self):
