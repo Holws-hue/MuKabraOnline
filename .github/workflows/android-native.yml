@@ -84,6 +84,20 @@ jobs:
             build-tools;36.0.0
             ndk;27.2.12479018
           accept-android-sdk-licenses: true
+      - name: Recuperar herramienta oficial apksigner de Android SDK
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $src = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/lib/apksigner.jar"
+          if (!(Test-Path $src)) { throw "apksigner.jar no existe en Android SDK 36" }
+          Copy-Item $src artifacts/apksigner.jar
+      - name: Exportar herramienta oficial para validacion de firma
+        uses: actions/upload-artifact@v4
+        with:
+          name: KABRA-ApkSigner-Oficial
+          path: artifacts/apksigner.jar
+          if-no-files-found: error
+
       - name: Instalar carga de trabajo Android
         shell: pwsh
         working-directory: upstream
