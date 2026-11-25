@@ -119,21 +119,13 @@ Set-Content -Path $serverConfigPath -Value $serverConfig -Encoding utf8
 
 # No avanzar a una escena rota si no se pudieron cargar los recursos del juego.
 $load=Get-Content $loadPath -Raw
-$oldError=@'
-                UpdateProgress(p => p.StatusText = $"Error: {ex.Message}");
-                await Task.Delay(5000, CancellationToken.None);
-                await TransitionToNextSceneAsync(CancellationToken.None);
-'@
-$newError=@'
-                UpdateProgress(p =>
-                {
-                    p.StatusText = "No se pudieron preparar los archivos de KABRA. Revisá la conexión y reiniciá.";
-                    p.IsDownloading = false;
-                });
-                return;
-'@
-if (!$load.Contains($oldError.Trim())) { throw 'Cambió el manejador de errores de LoadScene; revisar antes de aplicar.' }
-$load=$load.Replace($oldError.Trim(),$newError.Trim())
+$oldStatus='UpdateProgress(p => p.StatusText = $"Error: {ex.Message}");'
+$oldTransition='await TransitionToNextSceneAsync(CancellationToken.None);'
+if (!$load.Contains($oldStatus) -or !$load.Contains($oldTransition)) {
+    throw 'Cambió el manejador de errores de LoadScene; revisar antes de aplicar.'
+}
+$load=$load.Replace($oldStatus, 'UpdateProgress(p => p.StatusText = "Error al preparar KABRA. Revisá la conexión y reiniciá la aplicación.");')
+$load=$load.Replace($oldTransition, 'return;')
 Set-Content -Path $loadPath -Value $load -Encoding utf8
 
 # Corregir también textos persistentes del módulo de carga y consejos.
