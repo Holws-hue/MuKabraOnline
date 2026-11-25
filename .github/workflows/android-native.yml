@@ -58,12 +58,12 @@ jobs:
       - name: Comprobar que KABRA tiene un ZIP real y reanudable
         shell: pwsh
         env:
-          KABRA_ASSETS_ZIP_URL: ${{ vars.KABRA_ASSETS_ZIP_URL }}
+          KABRA_ASSETS_ZIP_URL: https://github.com/Holws-hue/MuKabraOnline/releases/download/android-recursos-kabra-2026-11/KABRA_ANDROID_DATA.zip
         run: ./scripts/validar-fuente-zip-v17.ps1
       - name: Reparar descarga y extraccion Android
         shell: pwsh
         env:
-          KABRA_ASSETS_ZIP_URL: ${{ vars.KABRA_ASSETS_ZIP_URL }}
+          KABRA_ASSETS_ZIP_URL: https://github.com/Holws-hue/MuKabraOnline/releases/download/android-recursos-kabra-2026-11/KABRA_ANDROID_DATA.zip
         run: ./scripts/fix-android-assets-v13.ps1
       - name: Conservar los archivos parciales de las actualizaciones previas
         shell: pwsh
@@ -122,7 +122,7 @@ jobs:
           if (!$scenes.Contains('if (DeferInterface) _interfacePending = true;')) { throw 'Pantalla login 2D no es visible' }
           $cfg = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
           if (!$cfg.Contains('<ApplicationId>com.kabraonline.inicio13</ApplicationId>')) { throw 'No se conserva paquete Android v13' }
-          if (!$cfg.Contains('<ApplicationVersion>16</ApplicationVersion>')) { throw 'versionCode 16 obligatorio para actualizar sin borrar datos' }
+          if (!$cfg.Contains('<ApplicationVersion>18</ApplicationVersion>')) { throw 'La version debe ser 18 sin cambiar package id' }
           if (!$assetLoad.Contains('DownloadAfterLogin { get; set; } = OperatingSystem.IsAndroid();')) { throw 'No inicia descarga al abrir Android' }
           if (!$assetLoad.Contains('ENTRAR SIN DESCARGAR') -or !$assetLoad.Contains('REINTENTAR DESCARGA')) { throw 'Faltan controles para login y reintentos' }
           if (!$login.Contains('Text = "DESCARGAR ARCHIVOS"')) { throw 'Falta boton de descarga' }
@@ -186,11 +186,11 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v16.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v18.apk
       - name: Validar icono y firma Android con herramienta oficial
         shell: pwsh
         run: |
-          $apk = "artifacts/KABRA-Android-v16.apk"
+          $apk = "artifacts/KABRA-Android-v18.apk"
           if (!(Test-Path $apk)) { throw 'No existe el APK de salida' }
           $tool = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/apksigner.bat"
           if (!(Test-Path $tool)) { throw "Falta apksigner oficial en $tool" }
@@ -209,5 +209,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: KABRA-Android-v16
-          path: artifacts/KABRA-Android-v16.apk
+          path: artifacts/KABRA-Android-v18.apk
           if-no-files-found: error
