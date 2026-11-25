@@ -28,7 +28,7 @@ $project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<Ap
 $project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.2-kabra</ApplicationDisplayVersion>')
 Set-Content $projectPath -Value $project -Encoding utf8
 $manifest = Get-Content $manifestPath -Raw
-$manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.nativepreview"')
+$manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.mobilepreview"')
 $manifest = $manifest.Replace('android:label="MuMono"', 'android:label="MU KABRA ONLINE"')
 Set-Content $manifestPath -Value $manifest -Encoding utf8
 Write-Output "Preparada configuracion de compilacion. Endpoint ConnectServer: ${hostname}:${port}."
