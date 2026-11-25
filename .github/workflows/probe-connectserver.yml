@@ -1,0 +1,40 @@
+name: KABRA - diagnostico de conexion sin credenciales
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/probe-connectserver.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Comprobar ConnectServer y handshake sin iniciar sesion
+        run: |
+          python3 - <<'PY'
+          import socket
+          host='523.ddns.net'
+          def probe(port, request=None):
+              print(f'Probando conexion TCP a host configurado, puerto {port}')
+              try:
+                  with socket.create_connection((host,port),timeout=5) as s:
+                      s.settimeout(5)
+                      print(f'Puerto {port}: TCP conectado')
+                      if request is not None:
+                          s.sendall(request)
+                      try:
+                          payload=s.recv(64)
+                          print(f'Puerto {port}: recibidos {len(payload)} bytes, cabecera={payload[:4].hex(" ")}')
+                          if port==44405 and payload[:2] != b'\\xc1\\x04':
+                              print('Respuesta recibida, interpretar estructura completa con cliente oficial')
+                          if port==55901 and payload and payload[0] in (0xD0,0xD1,0xD2):
+                              print('Se detecta cabecera propietaria del protocolo Louis; el cliente OpenMU aun no es compatible')
+                      except socket.timeout:
+                          print(f'Puerto {port}: sin datos iniciales en 5s')
+              except OSError as e:
+                  print(f'Puerto {port}: fallo de red {type(e).__name__}: {e}')
+          probe(44405, bytes.fromhex('C1 04 F4 06'))
+          probe(55901)
+          PY
