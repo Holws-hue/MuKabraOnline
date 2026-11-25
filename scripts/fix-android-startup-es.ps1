@@ -47,6 +47,8 @@ $loadPath=Join-Path $ClientDirectory 'Client.Main/Scenes/LoadScene.cs'
 $load=Get-Content $loadPath -Raw
 $replace=@{
   '"Initializing..."'='"Iniciando MU KABRA..."';
+  'Title = "Game Data"'='Title = "Archivos de KABRA"';
+  '"Extracting: {entry.Name}"'='"Preparando: {entry.Name}"';
   'Subtitle = "Preparing"'='Subtitle = "Preparando KABRA"';
   '"Assets found – skipping download."'='"Archivos encontrados. Iniciando KABRA..."';
   '"Connecting..."'='"Conectando a KABRA..."';
