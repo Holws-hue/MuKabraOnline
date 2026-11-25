@@ -49,6 +49,11 @@ jobs:
       - name: Quitar dialogo IP/Port y traducir pantalla inicial
         shell: pwsh
         run: ./scripts/fix-android-startup-es.ps1
+      - name: Reparar descarga y extraccion Android
+        shell: pwsh
+        env:
+          KABRA_ASSETS_ZIP_URL: ${{ vars.KABRA_ASSETS_ZIP_URL }}
+        run: ./scripts/fix-android-assets-v13.ps1
       - name: Comprobar que Android no solicite IP ni puerto
         shell: pwsh
         run: |
@@ -56,7 +61,7 @@ jobs:
           if ($load.Contains('nextSceneType = typeof(ServerConfigScene);')) { throw 'La APK todavia entra al editor IP/Port' }
           if (!$load.Contains('nextSceneType = typeof(LoginScene);')) { throw 'No se encontró el acceso directo a LoginScene' }
           $config = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
-          if (!$config.Contains('com.kabraonline.inicio12')) { throw 'Version 0.6 sin ID de Android independiente' }
+          if (!$config.Contains('com.kabraonline.inicio13')) { throw 'Version 0.6 sin ID de Android independiente' }
           $view = Get-Content upstream/Client.Main/Controls/UI/Loading/LoadingScreenView.cs -Raw
           if (!$view.Contains('"CONSEJO"')) { throw 'El texto TIP sigue en ingles' }
           $login = Get-Content upstream/Client.Main/Scenes/LoginScene.cs -Raw
@@ -78,6 +83,12 @@ jobs:
           if (!$load.Contains('_loadingView.ShowStats = progress.IsDownloading;')) { throw 'Progreso de descarga no conectado' }
           if (!$login.Contains('CODIGO {rawCode:D3}')) { throw 'No muestra codigo de login legible' }
           if ($login.Contains('Text = "MU KABRA ONLINE"')) { throw 'Quedo el titulo dorado en el login' }
+          $assetLoad = Get-Content upstream/Client.Main/Scenes/LoadScene.cs -Raw
+          if (!$assetLoad.Contains('ZIP sin archivos') -or !$assetLoad.Contains('Descarga incompleta')) { throw 'Descarga no validada' }
+          if (!$assetLoad.Contains('kabra-assets-complete') -or !$assetLoad.Contains('Path.Combine(root, relative)')) { throw 'Extraccion segura no aplicada' }
+          if ($assetLoad.Contains('Debug.WriteLine($"[Extract] Failed:')) { throw 'Error de extraccion se sigue silenciando' }
+          $constants = Get-Content upstream/Client.Main/Constants.cs -Raw
+          if (!$constants.Contains('Environment.SpecialFolder.LocalApplicationData')) { throw 'Datos siguen en ruta no escribible de Android' }
           $net = Get-Content upstream/Client.Main/Networking/NetworkManager.cs -Raw
           if (!$net.Contains('SendKabraInitialPingAsync')) { throw 'Ping inicial no conectado a F1 00' }
           $main = Get-Content upstream/Client.Main/MuGame.cs -Raw
@@ -137,11 +148,11 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v12.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v13.apk
       - name: Validar icono y firma Android con herramienta oficial
         shell: pwsh
         run: |
-          $apk = "artifacts/KABRA-Android-v12.apk"
+          $apk = "artifacts/KABRA-Android-v13.apk"
           if (!(Test-Path $apk)) { throw 'No existe el APK de salida' }
           $tool = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/apksigner.bat"
           if (!(Test-Path $tool)) { throw "Falta apksigner oficial en $tool" }
@@ -159,6 +170,6 @@ jobs:
       - name: Publicar instalador de laboratorio
         uses: actions/upload-artifact@v4
         with:
-          name: KABRA-Android-v12
-          path: artifacts/KABRA-Android-v12.apk
+          name: KABRA-Android-v13
+          path: artifacts/KABRA-Android-v13.apk
           if-no-files-found: error
