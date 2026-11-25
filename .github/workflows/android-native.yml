@@ -1,0 +1,81 @@
+name: KABRA Android - compilacion de prueba
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/android-native.yml'
+      - 'scripts/configure-kabra.ps1'
+jobs:
+  android-preview:
+    name: Cliente MonoGame Android ARM64
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      NUGET_XMLDOC_MODE: skip
+      MSBUILDDISABLENODEREUSE: 1
+      KABRA_CONNECT_HOST: 523.ddns.net
+      KABRA_CONNECT_PORT: '44405'
+      KABRA_CLIENT_VERSION: ${{ vars.KABRA_CLIENT_VERSION }}
+      KABRA_CLIENT_SERIAL: ${{ secrets.KABRA_CLIENT_SERIAL }}
+    steps:
+      - name: Descargar configuracion KABRA
+        uses: actions/checkout@v4
+      - name: Descargar motor MonoGame sin Babylon
+        uses: actions/checkout@v4
+        with:
+          repository: xulek/muonline
+          ref: f3365cb1f5231d26979f16813204ab55ced699b7
+          path: upstream
+          submodules: recursive
+      - name: Aplicar configuracion de laboratorio KABRA
+        shell: pwsh
+        run: ./scripts/configure-kabra.ps1
+      - name: Preparar .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar Android SDK 36
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11076708
+          packages: |
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            ndk;27.2.12479018
+          accept-android-sdk-licenses: true
+      - name: Instalar carga de trabajo Android
+        shell: pwsh
+        working-directory: upstream
+        run: dotnet workload restore MuAndroid/MuAndroid.csproj --skip-manifest-update
+      - name: Restaurar herramientas MonoGame
+        shell: pwsh
+        working-directory: upstream
+        run: dotnet tool restore --tool-manifest MuAndroid/.config/dotnet-tools.json
+      - name: Compilar APK Android nativo Debug
+        shell: pwsh
+        working-directory: upstream
+        run: dotnet publish MuAndroid/MuAndroid.csproj -f net10.0-android -c Debug -r android-arm64 -p:AndroidPackageFormats=apk -p:RestoreMonoGameTools=false -p:EmbedAssembliesIntoApk=true
+      - name: Localizar y revisar APK
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $apk) { throw "Compilacion sin APK instalable" }
+          Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
+          Copy-Item $apk.FullName artifacts/KABRA-Online-Nativo-Preview.apk
+      - name: Publicar instalador de laboratorio
+        uses: actions/upload-artifact@v4
+        with:
+          name: KABRA-Online-Nativo-Preview
+          path: artifacts/KABRA-Online-Nativo-Preview.apk
+          if-no-files-found: error
