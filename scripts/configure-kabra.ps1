@@ -31,7 +31,7 @@ $manifest = Get-Content $manifestPath -Raw
 $manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.mobilepreview"')
 $manifest = $manifest.Replace('android:label="MuMono"', 'android:label="MU KABRA ONLINE"')
 Set-Content $manifestPath -Value $manifest -Encoding utf8
-Write-Output "Preparada configuracion de compilacion. Endpoint ConnectServer: ${hostname}:${port}."
+Write-Output "Configuracion de KABRA ONLINE aplicada. Endpoint no mostrado."
 Write-Output "NOTA: esta preparacion no verifica la conectividad ni el protocolo Louis 31."
 
 # Parche Android: MonoGame Android no contiene Graphics.OcclusionQuery
@@ -139,3 +139,40 @@ $brandedFooter = @'
 $screenSource = $screenSource.Replace($footer, $brandedFooter.TrimEnd())
 Set-Content -Path $loadView -Value $screenSource -Encoding utf8
 Write-Host 'Brand MU KABRA aplicado también a todas las pantallas de carga.'
+
+
+# Capa de compatibilidad del transporte Louis 31, exclusivamente del GameServer.
+# El ConnectServer conserva su protocolo estándar. No sustituye MHP/antihack.
+$pipeSource = 'patches/KabraLouis31Pipe.cs'
+$pipeDest = Join-Path $ClientDirectory 'Client.Main/Networking/KabraLouis31Pipe.cs'
+if (!(Test-Path $pipeSource)) { throw "Falta la implementacion del transporte Louis31" }
+Copy-Item -Path $pipeSource -Destination $pipeDest -Force
+
+$cmPath = Join-Path $ClientDirectory 'Client.Main/Networking/ConnectionManager.cs'
+$cm = Get-Content $cmPath -Raw
+$oldPipe = 'IDuplexPipe transportPipe = newSocketConn;'
+if (!$cm.Contains($oldPipe)) { throw 'No se encontró punto de conexión al transporte del GameServer' }
+$cm = $cm.Replace($oldPipe, 'IDuplexPipe transportPipe = useEncryption ? new KabraLouis31Pipe(newSocketConn) : newSocketConn;')
+# No mostrar servidor/IP/puerto en logs de cliente.
+$cm = $cm.Replace('\"🔌 Already connected. Disconnect first before connecting to {Host}:{Port}.\", host, port',
+                  '\"Ya existe una conexión al servidor.\"')
+$cm = $cm.Replace('\"🔌 Attempting connection infrastructure setup for {Host}:{Port} (Encryption: {UseEncryption})...\", host, port, useEncryption',
+                  '\"Preparando la conexión a MU KABRA ONLINE...\"')
+$cm = $cm.Replace('\"✔️ Socket connected to {EndPoint}. Socket HashCode: {HashCode}\", endPoint, newSocketConn.GetHashCode()',
+                  '\"Conexión TCP establecida con KABRA.\"')
+$cm = $cm.Replace('\"❓ Failed to resolve IPv4 address for host: {Host}\", host',
+                  '\"No se pudo encontrar el servidor KABRA.\"')
+Set-Content -Path $cmPath -Value $cm -Encoding utf8
+
+$nmPath = Join-Path $ClientDirectory 'Client.Main/Networking/NetworkManager.cs'
+$nm = Get-Content $nmPath -Raw
+$nm = $nm.Replace('OnErrorOccurred($"Connection to Connect Server {_settings.ConnectServerHost}:{_settings.ConnectServerPort} failed.");',
+                  'OnErrorOccurred("No se pudo conectar a KABRA ONLINE. Revisá tu conexión.");')
+$nm = $nm.Replace('OnErrorOccurred($"Connection to Game Server {host}:{port} failed.");',
+                  'OnErrorOccurred("No se pudo conectar al servidor de juego KABRA.");')
+$nm = $nm.Replace('"Connecting to Game Server {Host}:{Port}...", host, port',
+                  '"Conectando al servidor de juego KABRA..."')
+$nm = $nm.Replace('"Force reconnecting to Connect Server {Host}:{Port}", _settings.ConnectServerHost, _settings.ConnectServerPort',
+                  '"Reconectando a KABRA ONLINE..."')
+Set-Content -Path $nmPath -Value $nm -Encoding utf8
+Write-Host 'Louis31: transporte de GameServer integrado. Los detalles de red no aparecen en los mensajes visibles.'
