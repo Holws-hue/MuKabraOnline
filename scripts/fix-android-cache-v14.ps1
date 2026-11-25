@@ -106,5 +106,43 @@ $checkMarker='return File.Exists(Path.Combine(dataPath, ".kabra-assets-complete"
 if (!$load.Contains($checkMarker)) { throw 'No se encontro verificador de recursos' }
 $load=$load.Replace($checkMarker,'return !File.Exists(Path.Combine(dataPath, ".kabra-assets-installing"))'+[Environment]::NewLine+'                && File.Exists(Path.Combine(dataPath, ".kabra-assets-complete"))')
 
+
+# Comprobar espacio de extracción además del espacio para el ZIP.
+# Un archivo de 1,7 GB puede requerir varios GB extra una vez descomprimido.
+$validatePoint='            // Extract'
+$uncompressed=@'
+            using (var resourceZip = ZipFile.OpenRead(localZip))
+            {
+                long expanded = resourceZip.Entries.Sum(e => e.Length);
+                try
+                {
+                    long free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(extractPath))!).AvailableFreeSpace;
+                    if (expanded > 0 && free < expanded + 256L * 1024 * 1024)
+                        throw new IOException($"Espacio insuficiente para descomprimir recursos: se necesitan aproximadamente {expanded / (1024 * 1024)} MB libres más 256 MB de seguridad.");
+                }
+                catch (ArgumentException) { /* DriveInfo no disponible en Android */ }
+                catch (UnauthorizedAccessException) { /* No hay estadísticas de almacenamiento */ }
+            }
+
+'@
+if (!$load.Contains($validatePoint)) { throw 'No se encontro inicio de extracción' }
+$load=$load.Replace($validatePoint,$uncompressed+$validatePoint)
+# Si la estructura del ZIP está corrupta, no insistir con un archivo inválido en cada inicio.
+$extractLine='            await ExtractZipWithProgressAsync(localZip, extractPath, ct);'
+$extractChecked=@'
+            try
+            {
+                await ExtractZipWithProgressAsync(localZip, extractPath, ct);
+            }
+            catch (InvalidDataException)
+            {
+                SafeDeleteFile(localZip);
+                SafeDeleteFile(localZip + ".origin.sha256");
+                throw;
+            }
+'@
+if (!$load.Contains($extractLine)) { throw 'Falta la extracción esperada' }
+$load=$load.Replace($extractLine,$extractChecked.TrimEnd())
+
 Set-Content $loadFile -Value $load -Encoding utf8
 Write-Host 'KABRA v14: ZIP parcial persistente, origen verificado y recuperación de extracción.'
