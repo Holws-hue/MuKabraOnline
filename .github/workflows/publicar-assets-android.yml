@@ -1,0 +1,102 @@
+name: Preparar datos Android desde descarga oficial KABRA
+on:
+  push:
+    branches:
+      - fix/kabra-android-v18-selfhost-assets
+    paths:
+      - '.github/workflows/publicar-assets-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  preparar-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+      - name: Instalar extractor RAR
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y p7zip-full
+      - name: Recuperar cliente desde enlace público de KABRA
+        run: |
+          mkdir -p staging
+          python3 - <<'PY'
+          import html, urllib.request
+          from html.parser import HTMLParser
+          page='https://www.mediafire.com/file/4w0vwg5jqdcll3i/Kabra_Online_S6_EPI3.rar/file'
+          req=urllib.request.Request(page,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'})
+          raw=urllib.request.urlopen(req, timeout=30).read().decode('utf-8','replace')
+          class Collector(HTMLParser):
+              def __init__(self): super().__init__();self.url=None
+              def handle_starttag(self, tag, attrs):
+                  a=dict(attrs)
+                  if tag=='a' and a.get('id')=='downloadButton': self.url=a.get('href')
+          p=Collector();p.feed(raw)
+          url=html.unescape(p.url or '')
+          if not url.startswith('https://') or 'mediafire.com/' not in url:
+              raise SystemExit('MediaFire no entregó el enlace. No se puede publicar ni validar el ZIP.')
+          with open('staging/mediafire-url.txt','w') as f:f.write(url)
+          print('Enlace HTTPS de MediaFire detectado.')
+          PY
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30             --max-time 2400 -H 'User-Agent: Mozilla/5.0'             -o staging/Kabra_Online_S6_EPI3.rar "$(cat staging/mediafire-url.txt)"
+          file staging/Kabra_Online_S6_EPI3.rar
+          test "$(stat -c '%s' staging/Kabra_Online_S6_EPI3.rar)" -gt 500000000
+      - name: Extraer y empaquetar datos de cliente
+        run: |
+          mkdir -p staging/extracted staging/pack
+          7z x -y staging/Kabra_Online_S6_EPI3.rar -ostaging/extracted >/dev/null
+          python3 - <<'PY'
+          import os,zipfile,hashlib
+          root='staging/extracted'
+          candidates=[]
+          for d,folders,files in os.walk(root):
+              if 'Gate.bmd' in files and os.path.basename(d).lower()=='data': candidates.append(d)
+          if len(candidates)!=1: raise SystemExit(f'Carpetas Data detectadas: {len(candidates)}, se esperaba una')
+          data=candidates[0]
+          maps=[d for d in os.listdir(data) if os.path.isdir(os.path.join(data,d)) and d.lower().startswith('world')]
+          if not maps: raise SystemExit('No hay mapas World')
+          target='staging/pack/KABRA_ANDROID_DATA.zip'
+          count=0
+          with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED,compresslevel=5,allowZip64=True) as z:
+              for dirname,dirs,files in os.walk(data):
+                  for fn in files:
+                      path=os.path.join(dirname,fn)
+                      z.write(path,os.path.relpath(path,data))
+                      count+=1
+          with zipfile.ZipFile(target) as z:
+              if z.testzip() is not None: raise SystemExit('ZIP corrupto')
+              names=z.namelist()
+              if 'Gate.bmd' not in names or not any(p.lower().startswith('world') for p in names):
+                  raise SystemExit('Faltan Gate.bmd o mapas World')
+          n=os.path.getsize(target)
+          if n<100000000: raise SystemExit('ZIP incompleto')
+          print(f'KABRA recursos: {count} archivos, {len(maps)} mapas, {n} bytes')
+          with open(target,'rb') as fd:
+              h=hashlib.sha256()
+              for block in iter(lambda:fd.read(1048576),b''):h.update(block)
+          print('SHA256:',h.hexdigest())
+          PY
+      - name: Publicar ZIP en Github Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=android-recursos-kabra-2026-11
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "La publicación ya existe; no se sobrescribe."
+            exit 1
+          fi
+          gh release create "$TAG" staging/pack/KABRA_ANDROID_DATA.zip             --title "KABRA Android - Data de cliente"             --notes "Recursos obtenidos del cliente publicado por KABRA. Compatibilidad con MonoGame Android pendiente de prueba."             --latest=false
+      - name: Validar URL pública y soporte Range
+        run: |
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-recursos-kabra-2026-11/KABRA_ANDROID_DATA.zip"
+          curl -sSLf --retry 3 -H 'Range: bytes=0-1023' -o staging/probe.bin -D staging/probe.headers "$URL"
+          python3 - <<'PY'
+          b=open('staging/probe.bin','rb').read(4)
+          if b!=bytes((0x50,0x4b,0x03,0x04)): raise SystemExit('URL no entrega ZIP')
+          headers=open('staging/probe.headers').read()
+          if not any(line.startswith('HTTP/') and ' 206 ' in line for line in headers.splitlines()):
+              raise SystemExit('La URL no permite reanudar descargas 206')
+          print('ZIP publicado, accesible y reanudable')
+          PY
