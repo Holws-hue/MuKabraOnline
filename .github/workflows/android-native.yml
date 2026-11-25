@@ -12,6 +12,7 @@ on:
       - 'scripts/fix-android-assets-v13.ps1'
       - 'scripts/fix-android-cache-v14.ps1'
       - 'scripts/login-sin-descarga-v14.ps1'
+      - 'scripts/habilitar-descarga-v15.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
@@ -63,6 +64,9 @@ jobs:
       - name: Login antes de descargar gigabytes
         shell: pwsh
         run: ./scripts/login-sin-descarga-v14.ps1
+      - name: Agregar boton de descarga independiente del login
+        shell: pwsh
+        run: ./scripts/habilitar-descarga-v15.ps1
       - name: Comprobar que Android no solicite IP ni puerto
         shell: pwsh
         run: |
@@ -108,7 +112,9 @@ jobs:
           if (!$scenes.Contains('if (DeferInterface) _interfacePending = true;')) { throw 'Pantalla login 2D no es visible' }
           $cfg = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
           if (!$cfg.Contains('<ApplicationId>com.kabraonline.inicio13</ApplicationId>')) { throw 'No se conserva paquete Android v13' }
-          if (!$cfg.Contains('<ApplicationVersion>14</ApplicationVersion>')) { throw 'versionCode debe ser 14 para actualizar v13' }
+          if (!$cfg.Contains('<ApplicationVersion>15</ApplicationVersion>')) { throw 'versionCode debe ser 15 para actualizar sin borrar datos' }
+          if (!$login.Contains('Text = "DESCARGAR ARCHIVOS"')) { throw 'Falta boton de descarga' }
+          if (!$login.Contains('MuGame.Instance.ChangeScene(new LoadScene());')) { throw 'Boton no abre instalador de recursos' }
           $net = Get-Content upstream/Client.Main/Networking/NetworkManager.cs -Raw
           if (!$net.Contains('SendKabraInitialPingAsync')) { throw 'Ping inicial no conectado a F1 00' }
           $main = Get-Content upstream/Client.Main/MuGame.cs -Raw
@@ -168,11 +174,11 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v14.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v15.apk
       - name: Validar icono y firma Android con herramienta oficial
         shell: pwsh
         run: |
-          $apk = "artifacts/KABRA-Android-v14.apk"
+          $apk = "artifacts/KABRA-Android-v15.apk"
           if (!(Test-Path $apk)) { throw 'No existe el APK de salida' }
           $tool = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/apksigner.bat"
           if (!(Test-Path $tool)) { throw "Falta apksigner oficial en $tool" }
@@ -190,6 +196,6 @@ jobs:
       - name: Publicar instalador de laboratorio
         uses: actions/upload-artifact@v4
         with:
-          name: KABRA-Android-v14
-          path: artifacts/KABRA-Android-v14.apk
+          name: KABRA-Android-v15
+          path: artifacts/KABRA-Android-v15.apk
           if-no-files-found: error
