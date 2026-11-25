@@ -1,0 +1,23 @@
+name: KABRA Louis31 - prueba de protocolos sin cuentas
+on:
+  push:
+    paths:
+      - "diagnostics/louis31_probe.py"
+      - ".github/workflows/probe-louis31.yml"
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar sintaxis
+        run: python3 -m py_compile diagnostics/louis31_probe.py
+      - name: Sondear lista de servidores y protocolo de inicio
+        env:
+          KABRA_HOST: 523.ddns.net
+          KABRA_CS_PORT: "44405"
+          KABRA_GS_PORT: "55901"
+        run: python3 diagnostics/louis31_probe.py
