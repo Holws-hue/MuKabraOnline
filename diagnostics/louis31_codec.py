@@ -1,45 +1,50 @@
-"""Observational Louis 31 wrapper decoder (lab only, NO login/credential handling).
+"""Enmarcado Louis31 de KABRA reconstruido desde captura del Main.exe original.
 
-Known packets in authentic KABRA captures begin with wire D0 and D2.
-The opaque body on a D2 packet remains encrypted; parsing its outer frame
-DOES NOT derive the server's challenge response or bypass any validation.
+Transporte auténtico observado: wire = ((logical - 1) ^ 0x10) & 0xFF
+Invierte TODOS los bytes, incluidos el tipo, el tamaño y el contenido cifrado.
+No autentica, no resuelve el intercambio del antihack y no contiene credenciales.
 """
-from __future__ import annotations
-
 
 class LouisFrameError(ValueError):
     pass
 
+def unwrap(b: int) -> int:
+    return ((b ^ 0x10) + 1) & 0xFF
+
+def wrap(b: int) -> int:
+    return ((b - 1) ^ 0x10) & 0xFF
+
+def _frame_length(data: bytes, wire: bool) -> int | None:
+    if len(data) < 2:
+        return None
+    head = unwrap(data[0]) if wire else data[0]
+    if head not in (0xC1, 0xC2, 0xC3, 0xC4):
+        raise LouisFrameError("Invalid packet family")
+    wide = head in (0xC2, 0xC4)
+    if wide and len(data) < 3:
+        return None
+    length = unwrap(data[1]) if wire else data[1]
+    if wide:
+        length = (length << 8) | (unwrap(data[2]) if wire else data[2])
+    if length < (4 if wide else 3) or length > 65535:
+        raise LouisFrameError("Invalid packet size")
+    return length
 
 def decode_frame(packet: bytes) -> bytes:
-    if len(packet) < 3:
-        raise LouisFrameError("Truncated frame")
-    family = packet[0]
-    if family == 0xD0:              # observed equivalent to C1
-        required = (packet[1] - 15) & 0xFF
-        kind = 0xC1
-    elif family == 0xD2:            # observed equivalent to C3
-        required = (packet[1] + 17) & 0xFF
-        kind = 0xC3
-    else:
-        raise LouisFrameError("Unverified wire framing: do not guess packet type")
-    if required != len(packet) or not 3 <= required <= 255:
-        raise LouisFrameError(f"Invalid frame size, expected={required}, actual={len(packet)}")
-    return bytes((kind, required)) + bytes(((b + 17) & 255 for b in packet[2:]))
+    required = _frame_length(packet, True)
+    if required != len(packet):
+        raise LouisFrameError(f"Expected {required} bytes, received {len(packet)}")
+    return bytes(unwrap(b) for b in packet)
 
+def encode_frame(packet: bytes) -> bytes:
+    required = _frame_length(packet, False)
+    if required != len(packet):
+        raise LouisFrameError("Invalid logical packet length")
+    return bytes(wrap(b) for b in packet)
 
 def read_one_frame_from_buffer(buffer: bytes) -> tuple[bytes | None, bytes]:
-    """TCP is a byte stream: returns (decoded packet or None, unconsumed buffer)."""
-    if len(buffer) < 2:
+    """TCP es un flujo de bytes y no conserva límites de paquetes."""
+    size = _frame_length(buffer, True)
+    if size is None or len(buffer) < size:
         return None, buffer
-    if buffer[0] == 0xD0:
-        length = (buffer[1] - 15) & 255
-    elif buffer[0] == 0xD2:
-        length = (buffer[1] + 17) & 255
-    else:
-        raise LouisFrameError("Unrecognized leading byte")
-    if length < 3:
-        raise LouisFrameError("Invalid declared frame length")
-    if len(buffer) < length:
-        return None, buffer
-    return decode_frame(buffer[:length]), buffer[length:]
+    return decode_frame(buffer[:size]), buffer[size:]
