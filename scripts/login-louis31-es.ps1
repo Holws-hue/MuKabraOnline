@@ -89,3 +89,16 @@ if (!$src.Contains($needle)) { throw 'No se encontró control de envío login' }
 $src=$src.Replace($needle,$replacement.TrimEnd())
 Set-Content -Path $source -Value $src -Encoding utf8
 Write-Host 'Interfaz de login española, evita duplicados y datos sensibles visibles.'
+
+
+# Si se desconecta antes de la selección, no cerrar MU de golpe.
+# El jugador puede tocar Aceptar y reintentar sin automatizar ciclos infinitos.
+$scenePath=Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$scene=Get-Content $scenePath -Raw
+$exitCmd='MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());'
+if (($scene.Split($exitCmd).Count - 1) -ne 2) { throw 'Estructura de cierre por desconexión cambió; revisar antes de editar.' }
+$first=$scene.IndexOf($exitCmd,[StringComparison]::Ordinal)
+$scene=$scene.Substring(0,$first)+'MuGame.ScheduleOnMainThread(() => { _ = _networkManager.ForceReconnectToConnectServerAsync(); });'+$scene.Substring($first+$exitCmd.Length)
+$scene=$scene.Replace('Closing game after connection lost message.', 'Reintentando al aceptar mensaje de conexión interrumpida.')
+Set-Content -Path $scenePath -Value $scene -Encoding utf8
+Write-Host 'Reconexión manual habilitada al aceptar el aviso; sin bucles de reintento.'
