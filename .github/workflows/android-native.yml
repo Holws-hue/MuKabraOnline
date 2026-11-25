@@ -19,7 +19,7 @@ jobs:
       MSBUILDDISABLENODEREUSE: 1
       KABRA_CONNECT_HOST: 523.ddns.net
       KABRA_CONNECT_PORT: '44405'
-      KABRA_CLIENT_VERSION: ${{ vars.KABRA_CLIENT_VERSION }}
+      KABRA_CLIENT_VERSION: '1.04.05'
       KABRA_CLIENT_SERIAL: ${{ secrets.KABRA_CLIENT_SERIAL }}
     steps:
       - name: Descargar configuracion KABRA
