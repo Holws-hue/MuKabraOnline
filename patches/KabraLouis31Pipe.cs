@@ -28,47 +28,31 @@ namespace Client.Main.Networking
             _ = Task.Run(WriteToGameServerAsync);
         }
 
-        private static byte Add(byte value, int delta) =>
-            unchecked((byte)(value + delta));
+        // Mapeo auténtico comprobado en la captura Main.exe Louis31:
+        // cable = ((MU - 1) XOR 0x10) ; MU = ((cable XOR 0x10) + 1)
+        // No es una simple suma de 15/17; esa aproximación alteraba gran parte de los bytes.
+        private static byte Unwrap(byte wire) =>
+            unchecked((byte)((wire ^ 0x10) + 1));
+
+        private static byte Wrap(byte logical) =>
+            unchecked((byte)((logical - 1) ^ 0x10));
 
         private static bool TryGetFrameSize(List<byte> pending, bool wire, out int length)
         {
             length = 0;
-            if (pending.Count < 2)
-                return false;
+            if (pending.Count < 2) return false;
 
-            byte type = pending[0];
-            int headerSize;
-            switch (type)
-            {
-                case 0xD0 when wire:
-                    headerSize = 2;
-                    length = Add(pending[1], -15);
-                    break;
-                case 0xD2 when wire:
-                    headerSize = 2;
-                    length = Add(pending[1], 17);
-                    break;
-                case 0xD1 when wire:
-                case 0xD3 when wire:
-                    headerSize = 3;
-                    if (pending.Count < 3) return false;
-                    length = (Add(pending[1], 17) << 8) | Add(pending[2], 17);
-                    break;
-                case 0xC1 when !wire:
-                case 0xC3 when !wire:
-                    headerSize = 2;
-                    length = pending[1];
-                    break;
-                case 0xC2 when !wire:
-                case 0xC4 when !wire:
-                    headerSize = 3;
-                    if (pending.Count < 3) return false;
-                    length = (pending[1] << 8) | pending[2];
-                    break;
-                default:
-                    throw new InvalidOperationException("Tipo de trama Louis31 no reconocido.");
-            }
+            byte kind = wire ? Unwrap(pending[0]) : pending[0];
+            int headerSize = kind == 0xC1 || kind == 0xC3 ? 2 : 3;
+            if (kind != 0xC1 && kind != 0xC2 && kind != 0xC3 && kind != 0xC4)
+                throw new InvalidOperationException("Tipo de trama Louis31 no reconocido.");
+
+            if (pending.Count < headerSize) return false;
+            byte high = wire ? Unwrap(pending[1]) : pending[1];
+            if (headerSize == 2)
+                length = high;
+            else
+                length = (high << 8) | (wire ? Unwrap(pending[2]) : pending[2]);
 
             if (length < headerSize + 1 || length > 65535)
                 throw new InvalidOperationException("Longitud de trama Louis31 inválida.");
@@ -77,51 +61,30 @@ namespace Client.Main.Networking
 
         internal static byte[] Decode(byte[] packet)
         {
-            if (packet == null || packet.Length < 3) throw new ArgumentException("Paquete incompleto");
-            var list = new List<byte>(packet);
-            if (!TryGetFrameSize(list, true, out var size) || size != packet.Length)
-                throw new ArgumentException("Trama de red incompleta.");
-            var decoded = (byte[])packet.Clone();
-            byte kind = decoded[0];
-            decoded[0] = Add(kind, -15);
-            if (kind == 0xD0)
-                decoded[1] = Add(decoded[1], -15);
-            else if (kind == 0xD2)
-                decoded[1] = Add(decoded[1], 17);
-            else
-            {
-                decoded[1] = Add(decoded[1], 17);
-                decoded[2] = Add(decoded[2], 17);
-            }
+            if (packet == null || packet.Length < 3)
+                throw new ArgumentException("Trama de red incompleta");
+            if (!TryGetFrameSize(new List<byte>(packet), true, out int length)
+                || length != packet.Length)
+                throw new ArgumentException("Tamaño de trama recibida incorrecto");
 
-            int header = (kind == 0xD0 || kind == 0xD2) ? 2 : 3;
-            for (int i = header; i < decoded.Length; i++)
-                decoded[i] = Add(decoded[i], 17);
-            return decoded;
+            var plain = (byte[])packet.Clone();
+            for (int i = 0; i < plain.Length; i++)
+                plain[i] = Unwrap(plain[i]);
+            return plain;
         }
 
         internal static byte[] Encode(byte[] packet)
         {
-            if (packet == null || packet.Length < 3) throw new ArgumentException("Paquete incompleto");
-            var list = new List<byte>(packet);
-            if (!TryGetFrameSize(list, false, out var size) || size != packet.Length)
-                throw new ArgumentException("Trama lógica incompleta.");
-            var encoded = (byte[])packet.Clone();
-            byte kind = encoded[0];
-            encoded[0] = Add(kind, 15);
-            if (kind == 0xC1)
-                encoded[1] = Add(encoded[1], 15);
-            else
-            {
-                encoded[1] = Add(encoded[1], -17);
-                if (kind == 0xC2 || kind == 0xC4)
-                    encoded[2] = Add(encoded[2], -17);
-            }
+            if (packet == null || packet.Length < 3)
+                throw new ArgumentException("Trama lógica incompleta");
+            if (!TryGetFrameSize(new List<byte>(packet), false, out int length)
+                || length != packet.Length)
+                throw new ArgumentException("Tamaño de trama de envío incorrecto");
 
-            int header = (kind == 0xC1 || kind == 0xC3) ? 2 : 3;
-            for (int i = header; i < encoded.Length; i++)
-                encoded[i] = Add(encoded[i], -17);
-            return encoded;
+            var wire = (byte[])packet.Clone();
+            for (int i = 0; i < wire.Length; i++)
+                wire[i] = Wrap(wire[i]);
+            return wire;
         }
 
         private static bool TakeFrame(List<byte> buffer, bool wire, out byte[] frame)
