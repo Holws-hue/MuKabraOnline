@@ -37,6 +37,17 @@ AppSettings = AppConfiguration.GetSection("MuOnlineSettings").Get<MuOnlineSettin
                 }
                 AppSettings.ConnectServerHost = kabraHost;
                 AppSettings.ConnectServerPort = kabraPort;
+                string kabraClientVersion = bundled["ClientVersion"];
+                string kabraClientSerial = bundled["ClientSerial"];
+                if (string.IsNullOrWhiteSpace(kabraClientVersion)
+                    || string.IsNullOrWhiteSpace(kabraClientSerial)
+                    || kabraClientSerial.Length != 16)
+                {
+                    throw new InvalidOperationException("Versión o serial KABRA inválidos en APK");
+                }
+                // No aceptar credenciales de cliente desactualizadas guardadas localmente.
+                AppSettings.ClientVersion = kabraClientVersion;
+                AppSettings.ClientSerial = kabraClientSerial;
             }
 '@
 $src=$src.Replace($needle,$replacement.TrimEnd())
