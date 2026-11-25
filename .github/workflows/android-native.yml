@@ -10,6 +10,8 @@ on:
       - 'scripts/login-louis31-es.ps1'
       - 'scripts/fix-android-startup-es.ps1'
       - 'scripts/fix-android-assets-v13.ps1'
+      - 'scripts/fix-android-cache-v14.ps1'
+      - 'scripts/login-sin-descarga-v14.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
@@ -55,6 +57,12 @@ jobs:
         env:
           KABRA_ASSETS_ZIP_URL: ${{ vars.KABRA_ASSETS_ZIP_URL }}
         run: ./scripts/fix-android-assets-v13.ps1
+      - name: Conservar los archivos parciales de las actualizaciones previas
+        shell: pwsh
+        run: ./scripts/fix-android-cache-v14.ps1
+      - name: Login antes de descargar gigabytes
+        shell: pwsh
+        run: ./scripts/login-sin-descarga-v14.ps1
       - name: Comprobar que Android no solicite IP ni puerto
         shell: pwsh
         run: |
@@ -90,6 +98,17 @@ jobs:
           if ($assetLoad.Contains('Debug.WriteLine($"[Extract] Failed:')) { throw 'Error de extraccion se sigue silenciando' }
           $constants = Get-Content upstream/Client.Main/Constants.cs -Raw
           if (!$constants.Contains('Environment.SpecialFolder.LocalApplicationData')) { throw 'Datos siguen en ruta no escribible de Android' }
+          if (!$assetLoad.Contains('NO borrar datos parciales')) { throw 'El ZIP parcial sigue borrandose' }
+          if (!$assetLoad.Contains('Descarga anterior recuperada')) { throw 'Falta recuperar ZIP completo' }
+          if (!$assetLoad.Contains('DownloadAfterLogin')) { throw 'Falta continuar descarga tras login' }
+          $login = Get-Content upstream/Client.Main/Scenes/LoginScene.cs -Raw
+          if (!$login.Contains('kabraLiteLogin')) { throw 'Se sigue descargando antes del login' }
+          if (!$login.Contains('LoadScene.DownloadAfterLogin = true;')) { throw 'Falta activar descarga luego de login correcto' }
+          $scenes = Get-Content upstream/Client.Main/Scenes/BaseScene.cs -Raw
+          if (!$scenes.Contains('if (DeferInterface) _interfacePending = true;')) { throw 'Pantalla login 2D no es visible' }
+          $cfg = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
+          if (!$cfg.Contains('<ApplicationId>com.kabraonline.inicio13</ApplicationId>')) { throw 'No se conserva paquete Android v13' }
+          if (!$cfg.Contains('<ApplicationVersion>14</ApplicationVersion>')) { throw 'versionCode debe ser 14 para actualizar v13' }
           $net = Get-Content upstream/Client.Main/Networking/NetworkManager.cs -Raw
           if (!$net.Contains('SendKabraInitialPingAsync')) { throw 'Ping inicial no conectado a F1 00' }
           $main = Get-Content upstream/Client.Main/MuGame.cs -Raw
@@ -149,11 +168,11 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v13.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v14.apk
       - name: Validar icono y firma Android con herramienta oficial
         shell: pwsh
         run: |
-          $apk = "artifacts/KABRA-Android-v13.apk"
+          $apk = "artifacts/KABRA-Android-v14.apk"
           if (!(Test-Path $apk)) { throw 'No existe el APK de salida' }
           $tool = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/apksigner.bat"
           if (!(Test-Path $tool)) { throw "Falta apksigner oficial en $tool" }
@@ -171,6 +190,6 @@ jobs:
       - name: Publicar instalador de laboratorio
         uses: actions/upload-artifact@v4
         with:
-          name: KABRA-Android-v13
-          path: artifacts/KABRA-Android-v13.apk
+          name: KABRA-Android-v14
+          path: artifacts/KABRA-Android-v14.apk
           if-no-files-found: error
