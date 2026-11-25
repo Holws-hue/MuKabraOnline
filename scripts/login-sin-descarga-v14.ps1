@@ -94,8 +94,19 @@ $drawNew=@'
                 return;
             }
 '@
-if (!$base.Contains($drawOld.TrimEnd())) { throw 'No se encontro soporte de Draw sin mundo' }
-$base=$base.Replace($drawOld.TrimEnd(),$drawNew.TrimEnd())
+$drawStart=$base.IndexOf('        public override void Draw(GameTime gameTime)',[StringComparison]::Ordinal)
+$nullCheck=if($drawStart -ge 0){$base.IndexOf('            if (World == null)',$drawStart,[StringComparison]::Ordinal)}else{-1}
+$returnAt=if($nullCheck -ge 0){$base.IndexOf('                return;',$nullCheck,[StringComparison]::Ordinal)}else{-1}
+if($nullCheck -lt 0 -or $returnAt -le $nullCheck){throw 'No se encontro Draw sin mundo'}
+$base=$base.Substring(0,$nullCheck)+@'
+            if (World == null)
+            {
+                GraphicsDevice.Clear(new Color(12, 9, 24));
+                if (DeferInterface) _interfacePending = true;
+                else DrawInterface(gameTime);
+                return;
+            }
+'@+$base.Substring($returnAt+'                return;'.Length)
 Set-Content $baseFile -Value $base -Encoding utf8
 
 Write-Host 'KABRA v14: iniciar sesion primero sin descargar datos, y descargar despues de login OK; UI 2D sin mundo.'
