@@ -37,6 +37,17 @@ AppSettings = AppConfiguration.GetSection("MuOnlineSettings").Get<MuOnlineSettin
                 }
                 AppSettings.ConnectServerHost = kabraHost;
                 AppSettings.ConnectServerPort = kabraPort;
+                string kabraClientVersion = bundled["ClientVersion"];
+                string kabraClientSerial = bundled["ClientSerial"];
+                if (string.IsNullOrWhiteSpace(kabraClientVersion)
+                    || string.IsNullOrWhiteSpace(kabraClientSerial)
+                    || kabraClientSerial.Length != 16)
+                {
+                    throw new InvalidOperationException("Versión o serial KABRA inválidos en APK");
+                }
+                // No aceptar credenciales de cliente desactualizadas guardadas localmente.
+                AppSettings.ClientVersion = kabraClientVersion;
+                AppSettings.ClientSerial = kabraClientSerial;
             }
 '@
 $src=$src.Replace($needle,$replacement.TrimEnd())
@@ -47,6 +58,8 @@ $loadPath=Join-Path $ClientDirectory 'Client.Main/Scenes/LoadScene.cs'
 $load=Get-Content $loadPath -Raw
 $replace=@{
   '"Initializing..."'='"Iniciando MU KABRA..."';
+  'Title = "Game Data"'='Title = "Archivos de KABRA"';
+  '"Extracting: {entry.Name}"'='"Preparando: {entry.Name}"';
   'Subtitle = "Preparing"'='Subtitle = "Preparando KABRA"';
   '"Assets found – skipping download."'='"Archivos encontrados. Iniciando KABRA..."';
   '"Connecting..."'='"Conectando a KABRA..."';
@@ -95,3 +108,293 @@ $roster=$roster.Replace('"Delete"','"Eliminar"')
 Set-Content -Path $rosterPath -Value $roster -Encoding utf8
 
 Write-Host 'KABRA OK: personajes y controles de seleccion traducidos al español.'
+
+# Red de seguridad: aunque otra ruta abra ServerConfigScene, Android salta al login.
+$serverConfigPath=Join-Path $ClientDirectory 'Client.Main/Scenes/ServerConfigScene.cs'
+$serverConfig=Get-Content $serverConfigPath -Raw
+$updateAnchor='        public override void Update(GameTime gameTime)'
+if (!$serverConfig.Contains($updateAnchor)) { throw 'No se encontró punto de protección de ServerConfigScene.' }
+$androidGuard=@'
+        public override void AfterLoad()
+        {
+            base.AfterLoad();
+            if (OperatingSystem.IsAndroid())
+            {
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new LoginScene()));
+            }
+        }
+
+'@
+$serverConfig=$serverConfig.Replace($updateAnchor,$androidGuard+$updateAnchor)
+Set-Content -Path $serverConfigPath -Value $serverConfig -Encoding utf8
+
+# No avanzar a una escena rota si no se pudieron cargar los recursos del juego.
+$load=Get-Content $loadPath -Raw
+$oldStatus='UpdateProgress(p => p.StatusText = $"Error: {ex.Message}");'
+$oldTransition='await TransitionToNextSceneAsync(CancellationToken.None);'
+if (!$load.Contains($oldStatus) -or !$load.Contains($oldTransition)) {
+    throw 'Cambió el manejador de errores de LoadScene; revisar antes de aplicar.'
+}
+$load=$load.Replace($oldStatus, 'UpdateProgress(p => p.StatusText = "Error al preparar KABRA. Revisá la conexión y reiniciá la aplicación.");')
+$load=$load.Replace($oldTransition, 'return;')
+Set-Content -Path $loadPath -Value $load -Encoding utf8
+
+# Corregir también textos persistentes del módulo de carga y consejos.
+$tipPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$tip=Get-Content $tipPath -Raw
+if (!$tip.Contains('"TIP"')) { throw 'No se encontró etiqueta TIP.' }
+$tip=$tip.Replace('"TIP"','"CONSEJO"')
+Set-Content -Path $tipPath -Value $tip -Encoding utf8
+$loadingControlPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/LoadingScreenControl.cs'
+$loadingControl=Get-Content $loadingControlPath -Raw
+$loadingControl=$loadingControl.Replace('"Loading..."','"Cargando..."')
+Set-Content -Path $loadingControlPath -Value $loadingControl -Encoding utf8
+Write-Host 'KABRA v06: acceso directo reforzado, error de carga visible y consejos en español.'
+
+# KABRA v07 - Unico grupo de servidor; ID 9 KABRA PVP, sin EVENT
+$loginFile=Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$loginSource=Get-Content $loginFile -Raw
+$patches = @(
+    @('Controls.Add(_eventGroup);','// KABRA: no se agrega el grupo EVENT a la interfaz'),
+    @('_nonEventGroup.AddServer(i, "SERVIDORES");','_nonEventGroup.AddServer(i, "SERVIDOR");'),
+    @('_nonEventGroup.Margin = new Margin { Left = -groupOffset };','_nonEventGroup.Margin = new Margin { Left = 0 };'),
+    @('_serverList.AddServer((byte)server.ServerId, $"Server {server.ServerId}", server.LoadPercentage);','if (server.ServerId == 9) _serverList.AddServer((byte)server.ServerId, "KABRA PVP", server.LoadPercentage);'),
+    @('"No se pudo iniciar sesión. Comprobá usuario, contraseña y versión del cliente."','$"KABRA: acceso rechazado (código {(byte)reason}). Revisá los datos o comunicate con soporte."'),
+    @('MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());','MuGame.ScheduleOnMainThread(() => { _ = _networkManager.ForceReconnectToConnectServerAsync(); });')
+)
+foreach ($pair in $patches) {
+    if (!$loginSource.Contains($pair[0])) { throw "No se encontró código KABRA v07: $($pair[0])" }
+    $loginSource=$loginSource.Replace($pair[0],$pair[1])
+}
+Set-Content -Path $loginFile -Value $loginSource -Encoding utf8
+$serverListFile=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/ServerList.cs'
+$serverListSrc=Get-Content $serverListFile -Raw
+$serverAnchor = 'var server = servers[i];'
+if (!$serverListSrc.Contains($serverAnchor)) { throw 'No se encontró lista de servidores de KABRA' }
+$serverListSrc=$serverListSrc.Replace($serverAnchor,$serverAnchor+[Environment]::NewLine+'                if (server.ServerId != 9) continue;')
+Set-Content -Path $serverListFile -Value $serverListSrc -Encoding utf8
+if ([string]::IsNullOrWhiteSpace($env:KABRA_CLIENT_SERIAL)) {
+    Write-Warning 'La compilación CI requiere el ClientSerial original de MainInfo para autenticarse. No se publica en GitHub.'
+}
+elseif ($env:KABRA_CLIENT_SERIAL.Length -ne 16) {
+    throw 'ClientSerial privado inválido: requiere 16 caracteres.'
+}
+Write-Host 'KABRA v07: grupo SERVIDOR único, PVP code 9, mensaje con código de error del servidor.'
+
+# KABRA v10: legibilidad de rechazo; no se falsifica el resultado del servidor.
+$loginPath = Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$login = Get-Content $loginPath -Raw
+$gold=@'
+            Controls.Add(new LabelControl
+            {
+                Text = "MU KABRA ONLINE",
+                Align = ControlAlign.HorizontalCenter,
+                Y = 18,
+                FontSize = 30,
+                TextColor = new Color(249, 209, 119),
+                Visible = true
+            });
+'@
+if (!$login.Contains($gold)) { throw 'Falta etiqueta dorada del login: revisar upstream antes de cambiarla' }
+$login=$login.Replace($gold,'')
+$login=$login.Replace('TextColor = Color.Yellow,','TextColor = Color.LightGray,')
+$login=$login.Replace('_statusLabel.TextColor = Color.Yellow;','_statusLabel.TextColor = Color.LightGray;')
+$oldError=@'
+                if (_statusLabel != null) _statusLabel.Text = "KABRA | Acceso rechazado";
+
+                string messageToShow = reason == LoginResponse.LoginResult.AccountAlreadyConnected
+                    ? "La cuenta ya está conectada."
+                    : $"KABRA: acceso rechazado (código {(byte)reason}). Revisá los datos o comunicate con soporte.";
+                MessageWindow.Show(messageToShow);
+'@
+$newError=@'
+                byte rawCode = (byte)reason;
+                if (_statusLabel != null)
+                {
+                    _statusLabel.Text = $"CODIGO {rawCode:D3}";
+                    _statusLabel.FontSize = 22;
+                    _statusLabel.TextColor = Color.White;
+                }
+                string detail = rawCode switch
+                {
+                    0 => "Contrasena incorrecta",
+                    2 => "Cuenta no valida",
+                    3 => "Cuenta ya conectada",
+                    4 => "Servidor lleno",
+                    5 => "Cuenta bloqueada",
+                    6 => "Version rechazada",
+                    7 => "Error de conexion",
+                    8 => "Demasiados intentos",
+                    14 => "Bloqueo temporal",
+                    _ => "Rechazo del servidor"
+                };
+                // Formato corto para moviles: el codigo no queda fuera de pantalla.
+                MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");
+                _logger.LogWarning("Codigo de login Louis31: {Code} ({Reason})", rawCode, reason);
+'@
+# Localizar por marcas, sin depender de CRLF/LF entre líneas.
+$startMark='                if (_statusLabel != null) _statusLabel.Text = "KABRA | Acceso rechazado";'
+$endMark='                MessageWindow.Show(messageToShow);'
+$start=$login.IndexOf($startMark,[StringComparison]::Ordinal)
+$end=if($start -ge 0){$login.IndexOf($endMark,$start,[StringComparison]::Ordinal)}else{-1}
+if($start -lt 0 -or $end -le $start){throw 'La rutina de error de login cambio; revisar codigo'}
+$login=$login.Substring(0,$start)+$newError.TrimEnd()+$login.Substring($end+$endMark.Length)
+Set-Content -Path $loginPath -Value $login -Encoding utf8
+
+# KABRA v10: vista simple, sin titulo dorado, circulo, barra ni pie.
+$viewPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$view=Get-Content $viewPath -Raw
+$drawStart=$view.IndexOf('            DrawTitle(sb, barY, ui);',[StringComparison]::Ordinal)
+$drawEnd=$view.IndexOf('            if (intro < 1f)',$drawStart,[StringComparison]::Ordinal)
+if ($drawStart -lt 0 -or $drawEnd -le $drawStart) { throw 'Cambió la vista de carga. No aplicar reemplazo a ciegas.' }
+$view=$view.Substring(0,$drawStart)+'            DrawKabraSimpleLoading(sb, screen, ui);'+[Environment]::NewLine+[Environment]::NewLine+$view.Substring($drawEnd)
+$anchor='        private void DrawTitle(SpriteBatch sb, int barY, float a)'
+if (!$view.Contains($anchor)) { throw 'No existe DrawTitle para insertar el titulo simple' }
+$simple=@'
+        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)
+        {
+            const string text = "Cargando";
+            const float fontSize = 18f;
+            float width = OrnateDraw.Measure(text, fontSize).X;
+            OrnateDraw.Text(sb, text, new Vector2((screen.X - width) * 0.5f, screen.Y - 50),
+                fontSize, OrnateStyle.TextLight, opacity);
+        }
+
+'@
+$view=$view.Replace($anchor,$simple+$anchor)
+Set-Content -Path $viewPath -Value $view -Encoding utf8
+
+# Los textos de presentación amarillos no deben cubrir el logo original.
+$dialogPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/LoginDialog.cs'
+$dialog=Get-Content $dialogPath -Raw
+if(!$dialog.Contains('Text = "MU KABRA ONLINE",')) { throw 'No se encontró titulo del login' }
+$dialog=$dialog.Replace('Text = "MU KABRA ONLINE",','Text = "INICIAR SESION",')
+Set-Content -Path $dialogPath -Value $dialog -Encoding utf8
+$logoClass=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/MuLogo.cs'
+$logo=Get-Content $logoClass -Raw
+if($logo.Contains('Text = "MU KABRA ONLINE",')){
+    $logo=$logo.Replace('Text = "MU KABRA ONLINE",','Text = "",')
+    Set-Content -Path $logoClass -Value $logo -Encoding utf8
+}
+
+
+# No ocultar el codigo del rechazo con la ventana de "conexion perdida" cuando Louis
+# cierra la sesion inmediatamente despues de rechazar el login.
+$scene=Get-Content $loginPath -Raw
+$field='        private bool _uiInitialized = false;'
+if(!$scene.Contains($field)){ throw 'No se encontro campo de UI de LoginScene' }
+$scene=$scene.Replace($field,'        private bool _kabraLoginRejected;'+[Environment]::NewLine+$field)
+$onState='                UpdateStatusLabel(newState);'
+if(!$scene.Contains($onState)){throw 'No se encontro actualizacion de estado de LoginScene'}
+$scene=$scene.Replace($onState,'                if (!_kabraLoginRejected || newState != ClientConnectionState.Disconnected) UpdateStatusLabel(newState);')
+if(!$scene.Contains('                if (showErrorAndExit)')){throw 'No se encontro aviso de desconexion'}
+$scene=$scene.Replace('                if (showErrorAndExit)','                if (showErrorAndExit && !_kabraLoginRejected)')
+$shown='                MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");'
+if(!$scene.Contains($shown)){throw 'No se encontro ventana de error legible'}
+$popup=@'
+                _kabraLoginRejected = true;
+                var rejectionWindow = MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");
+                if (rejectionWindow != null)
+                {
+                    rejectionWindow.Closed += (s, e) =>
+                    {
+                        _kabraLoginRejected = false;
+                        if (_networkManager?.CurrentState == ClientConnectionState.Disconnected)
+                        {
+                            // Reconexion manual tras aceptar el mensaje. No reintenta contraseña.
+                            _ = _networkManager.ForceReconnectToConnectServerAsync();
+                        }
+                    };
+                }
+'@
+$scene=$scene.Replace($shown,$popup.TrimEnd())
+$success='                _logger.LogInformation("UI received LoginSuccess.");'
+if(!$scene.Contains($success)){throw 'No se encontro evento LoginSuccess'}
+$scene=$scene.Replace($success,$success+[Environment]::NewLine+'                _kabraLoginRejected = false;')
+Set-Content -Path $loginPath -Value $scene -Encoding utf8
+Write-Host 'KABRA v10: la ventana de rechazo no queda oculta por errores posteriores.'
+
+Write-Host 'KABRA v10: errores legibles y carga simplificada, sin texto dorado ni barras.'
+
+# KABRA v11: barra REAL dibujada por MonoGame, nunca incrustada en la imagen.
+# El progreso ya existe en LoadingScreenView.Progress, informado por LoadScene.
+$viewPath = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$view = Get-Content $viewPath -Raw
+$startMarker='        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)'
+$endMarker='        private void DrawTitle(SpriteBatch sb, int barY, float a)'
+$start=$view.IndexOf($startMarker,[StringComparison]::Ordinal)
+$end=if($start -ge 0){$view.IndexOf($endMarker,$start,[StringComparison]::Ordinal)}else{-1}
+if($start -lt 0 -or $end -lt $start){throw 'No se encontro vista sencilla KABRA v10, revisar antes de editar'}
+$newOverlay=@'
+        // Panel de progreso de interfaz: independiente de la textura de fondo.
+        // Usa el avance REAL informado por las tareas de descarga y extraccion.
+        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)
+        {
+            int panelWidth = Math.Min(680, Math.Max(260, screen.X - 48));
+            int panelX = (screen.X - panelWidth) / 2;
+            int panelHeight = ShowStats ? 116 : 100;
+            int panelY = Math.Max(10, screen.Y - panelHeight - 22);
+            var panel = new Rectangle(panelX, panelY, panelWidth, panelHeight);
+            var pixel = GraphicsManager.Instance.Pixel;
+            sb.Draw(pixel, panel, Color.Black * (opacity * 0.82f));
+            sb.Draw(pixel, new Rectangle(panelX, panelY, panelWidth, 1),
+                new Color(165, 110, 190) * opacity);
+
+            string headline = "Cargando";
+            OrnateDraw.Text(sb, headline, new Vector2(panelX + 16, panelY + 9),
+                17f, OrnateStyle.TextLight, opacity, bold: true);
+            string percentText = $"{(int)MathF.Round(_progress * 100f)}%";
+            float percentageWidth = OrnateDraw.Measure(percentText, 17f).X;
+            OrnateDraw.Text(sb, percentText,
+                new Vector2(panelX + panelWidth - 17 - percentageWidth, panelY + 9),
+                17f, OrnateStyle.TextLight, opacity, bold: true);
+
+            var channel = new Rectangle(panelX + 16, panelY + 37, panelWidth - 32, 13);
+            sb.Draw(pixel, channel, new Color(38, 37, 49) * opacity);
+            int fillWidth = (int)MathF.Round(channel.Width * MathHelper.Clamp(_shownProgress, 0f, 1f));
+            if (fillWidth > 0)
+            {
+                sb.Draw(pixel, new Rectangle(channel.X, channel.Y, fillWidth, channel.Height),
+                    new Color(160, 82, 197) * opacity);
+                sb.Draw(pixel, new Rectangle(channel.X, channel.Y, fillWidth, 2),
+                    new Color(230, 184, 255) * opacity);
+            }
+
+            string status = string.IsNullOrWhiteSpace(StatusText) ? "Preparando archivos..." : StatusText.Trim();
+            if (status.Length > 65) status = status.Substring(0, 62) + "...";
+            OrnateDraw.Text(sb, status, new Vector2(panelX + 16, panelY + 56),
+                12f, OrnateStyle.TextLight, opacity);
+
+            // Estadisticas solo cuando se descargan bytes realmente.
+            if (ShowStats)
+            {
+                string size = string.IsNullOrWhiteSpace(SizeText) ? "Calculando tamaño..." : SizeText;
+                string speed = string.IsNullOrWhiteSpace(SpeedText) ? "" : SpeedText;
+                string eta = string.IsNullOrWhiteSpace(EtaText) ? "" : EtaText;
+                OrnateDraw.Text(sb, size, new Vector2(panelX + 16, panelY + 82),
+                    11f, OrnateStyle.TextLight, opacity);
+                if (!string.IsNullOrEmpty(speed))
+                    OrnateDraw.Text(sb, speed, new Vector2(panelX + panelWidth / 2f - 30, panelY + 82),
+                        11f, OrnateStyle.TextLight, opacity);
+                if (!string.IsNullOrEmpty(eta))
+                {
+                    float width = OrnateDraw.Measure(eta, 11f).X;
+                    OrnateDraw.Text(sb, eta, new Vector2(panelX + panelWidth - width - 16, panelY + 82),
+                        11f, OrnateStyle.TextLight, opacity);
+                }
+            }
+        }
+
+'@
+$view=$view.Substring(0,$start)+$newOverlay+$view.Substring($end)
+Set-Content -Path $viewPath -Value $view -Encoding utf8
+
+# Datos de tamanio, velocidad y ETA ya existen; ocultarlos fuera de descarga
+# para no mostrar estadisticas viejas durante la extraccion.
+$loadPath = Join-Path $ClientDirectory 'Client.Main/Scenes/LoadScene.cs'
+$load = Get-Content $loadPath -Raw
+$anchor = '_loadingView.StatusText = progress.StatusText;'
+if (!$load.Contains($anchor)) { throw 'No se encontro el enlace de estado en LoadScene' }
+$load=$load.Replace($anchor,$anchor+[Environment]::NewLine+'            _loadingView.ShowStats = progress.IsDownloading;')
+Set-Content -Path $loadPath -Value $load -Encoding utf8
+Write-Host 'KABRA v11: panel real de descarga/extraer, porcentaje, bytes, velocidad y ETA, por separado de imagen.'
