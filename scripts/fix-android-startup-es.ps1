@@ -232,8 +232,13 @@ $newError=@'
                 MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");
                 _logger.LogWarning("Codigo de login Louis31: {Code} ({Reason})", rawCode, reason);
 '@
-if (!$login.Contains($oldError)) { throw 'El texto de login ha cambiado; se requiere revision para conservar error real' }
-$login=$login.Replace($oldError,$newError)
+# Localizar por marcas, sin depender de CRLF/LF entre líneas.
+$startMark='                if (_statusLabel != null) _statusLabel.Text = "KABRA | Acceso rechazado";'
+$endMark='                MessageWindow.Show(messageToShow);'
+$start=$login.IndexOf($startMark,[StringComparison]::Ordinal)
+$end=if($start -ge 0){$login.IndexOf($endMark,$start,[StringComparison]::Ordinal)}else{-1}
+if($start -lt 0 -or $end -le $start){throw 'La rutina de error de login cambio; revisar codigo'}
+$login=$login.Substring(0,$start)+$newError.TrimEnd()+$login.Substring($end+$endMark.Length)
 Set-Content -Path $loginPath -Value $login -Encoding utf8
 
 # KABRA v10: vista simple, sin titulo dorado, circulo, barra ni pie.
