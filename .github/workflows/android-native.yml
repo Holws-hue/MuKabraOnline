@@ -6,6 +6,7 @@ on:
       - '.github/workflows/android-native.yml'
       - 'scripts/configure-kabra.ps1'
       - 'scripts/branding-kabra.ps1'
+      - 'scripts/login-louis31-es.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
@@ -40,6 +41,9 @@ jobs:
       - name: Generar arte del menu e iconos de MU KABRA
         shell: pwsh
         run: ./scripts/branding-kabra.ps1
+      - name: Corregir login Louis31 y traducir al espanol
+        shell: pwsh
+        run: ./scripts/login-louis31-es.ps1
       - name: Preparar .NET 10
         uses: actions/setup-dotnet@v4
         with:
