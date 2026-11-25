@@ -176,3 +176,22 @@ $nm = $nm.Replace('"Force reconnecting to Connect Server {Host}:{Port}", _settin
                   '"Reconectando a KABRA ONLINE..."')
 Set-Content -Path $nmPath -Value $nm -Encoding utf8
 Write-Host 'Louis31: transporte de GameServer integrado. Los detalles de red no aparecen en los mensajes visibles.'
+
+
+# Nombres de canales sin exponer direcciones, puertos o identificadores de infraestructura.
+$serverListPath = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/ServerList.cs'
+$serversUi = Get-Content $serverListPath -Raw
+$target = 'AddServer((byte)server.ServerId, server.ServerName ?? $"Server {server.ServerId}", gauge);'
+if (!$serversUi.Contains($target)) { throw "No se encontró la presentación de servidores." }
+$serversUi = $serversUi.Replace($target, @'
+string channelName = server.ServerId switch
+                {
+                    9 => "KABRA PVP",
+                    19 => "KABRA CASTLE",
+                    _ => "KABRA ONLINE"
+                };
+                AddServer((byte)server.ServerId, channelName, gauge);
+'@.TrimEnd())
+$serversUi = $serversUi.Replace('const string title = "SELECT SERVER";', 'const string title = "SERVIDORES KABRA";')
+Set-Content -Path $serverListPath -Value $serversUi -Encoding utf8
+Write-Host 'Menu: canales KABRA PVP / KABRA CASTLE, sin direcciones visibles.'
