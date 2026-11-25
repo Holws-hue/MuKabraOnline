@@ -52,6 +52,7 @@ $replacement = @'
     public static void WaitForGpu() { }
 #else
 '@
+$replacement += "`n"
 $replacement += $profiler.Substring($startAt, $endAt - $startAt)
 $replacement += "`n#endif`n`n"
 $profiler = $profiler.Substring(0, $startAt) + $replacement + $profiler.Substring($endAt)
