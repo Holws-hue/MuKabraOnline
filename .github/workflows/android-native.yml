@@ -14,6 +14,7 @@ on:
       - 'scripts/login-sin-descarga-v14.ps1'
       - 'scripts/habilitar-descarga-v15.ps1'
       - 'scripts/auto-download-v16.ps1'
+      - 'scripts/validar-fuente-zip-v17.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
@@ -54,6 +55,11 @@ jobs:
       - name: Quitar dialogo IP/Port y traducir pantalla inicial
         shell: pwsh
         run: ./scripts/fix-android-startup-es.ps1
+      - name: Comprobar que KABRA tiene un ZIP real y reanudable
+        shell: pwsh
+        env:
+          KABRA_ASSETS_ZIP_URL: ${{ vars.KABRA_ASSETS_ZIP_URL }}
+        run: ./scripts/validar-fuente-zip-v17.ps1
       - name: Reparar descarga y extraccion Android
         shell: pwsh
         env:
