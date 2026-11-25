@@ -41,7 +41,7 @@ $profiler = Get-Content $profilerPath -Raw
 $startToken = '    private static Microsoft.Xna.Framework.Graphics.OcclusionQuery _gpuFence;'
 $endToken = '    public static PassToken Start()'
 $startAt = $profiler.IndexOf($startToken, [StringComparison]::Ordinal)
-$endAt = $profiler.IndexOf($endToken, [StringComparison]::Ordinal)
+$endAt = if ($startAt -ge 0) { $profiler.IndexOf($endToken, $startAt, [StringComparison]::Ordinal) } else { -1 }
 if ($startAt -lt 0 -or $endAt -lt $startAt) {
   throw "No es posible localizar el bloque de GPU diagnostics: cambiar revision del motor antes de continuar"
 }
