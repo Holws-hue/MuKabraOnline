@@ -1,0 +1,27 @@
+name: Herramientas de firma APK en laboratorio
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/get-signer.yml'
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Instalar Android SDK build-tools 35
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+      - name: Empaquetar herramientas del SDK para firmar localmente
+        run: |
+          mkdir -p out
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" out/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" out/
+          chmod +x out/zipalign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AndroidSDK-sign-local
+          path: out/
+          if-no-files-found: error
