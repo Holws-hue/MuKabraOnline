@@ -263,4 +263,18 @@ $simple=@'
 '@
 $view=$view.Replace($anchor,$simple+$anchor)
 Set-Content -Path $viewPath -Value $view -Encoding utf8
+
+# Los textos de presentación amarillos no deben cubrir el logo original.
+$dialogPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/LoginDialog.cs'
+$dialog=Get-Content $dialogPath -Raw
+if(!$dialog.Contains('Text = "MU KABRA ONLINE",')) { throw 'No se encontró titulo del login' }
+$dialog=$dialog.Replace('Text = "MU KABRA ONLINE",','Text = "INICIAR SESION",')
+Set-Content -Path $dialogPath -Value $dialog -Encoding utf8
+$logoClass=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/MuLogo.cs'
+$logo=Get-Content $logoClass -Raw
+if($logo.Contains('Text = "MU KABRA ONLINE",')){
+    $logo=$logo.Replace('Text = "MU KABRA ONLINE",','Text = "",')
+    Set-Content -Path $logoClass -Value $logo -Encoding utf8
+}
+
 Write-Host 'KABRA v10: errores legibles y carga simplificada, sin texto dorado ni barras.'
