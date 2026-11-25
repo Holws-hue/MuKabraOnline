@@ -9,6 +9,7 @@ on:
       - 'branding/logo_kabra_64.png.base64'
       - 'scripts/login-louis31-es.ps1'
       - 'scripts/fix-android-startup-es.ps1'
+      - 'scripts/fix-android-assets-v13.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
