@@ -26,6 +26,7 @@ $cfg | ConvertTo-Json -Depth 100 | Set-Content -Path $settingsPath -Encoding utf
 $project = Get-Content $projectPath -Raw
 $project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<ApplicationId>com.kabraonline.inicio05</ApplicationId>')
 $project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.5-inicio-es</ApplicationDisplayVersion>')
+$project = $project.Replace('<ApplicationVersion>1</ApplicationVersion>', '<ApplicationVersion>5</ApplicationVersion>')
 Set-Content $projectPath -Value $project -Encoding utf8
 $manifest = Get-Content $manifestPath -Raw
 $manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.inicio05"')
