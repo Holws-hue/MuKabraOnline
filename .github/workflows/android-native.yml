@@ -55,9 +55,12 @@ jobs:
           if ($load.Contains('nextSceneType = typeof(ServerConfigScene);')) { throw 'La APK todavia entra al editor IP/Port' }
           if (!$load.Contains('nextSceneType = typeof(LoginScene);')) { throw 'No se encontró el acceso directo a LoginScene' }
           $config = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
-          if (!$config.Contains('com.kabraonline.inicio06')) { throw 'Version 0.6 sin ID de Android independiente' }
+          if (!$config.Contains('com.kabraonline.inicio07')) { throw 'Version 0.6 sin ID de Android independiente' }
           $view = Get-Content upstream/Client.Main/Controls/UI/Loading/LoadingScreenView.cs -Raw
           if (!$view.Contains('"CONSEJO"')) { throw 'El texto TIP sigue en ingles' }
+          $login = Get-Content upstream/Client.Main/Scenes/LoginScene.cs -Raw
+          if ($login.Contains('Controls.Add(_eventGroup);')) { throw 'EVENTS sigue visible en Android' }
+          if (!$login.Contains('server.ServerId == 9')) { throw 'KABRA PVP no esta filtrado' }
       - name: Preparar .NET 10
         uses: actions/setup-dotnet@v4
         with:
@@ -99,10 +102,10 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v06.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v07.apk
       - name: Publicar instalador de laboratorio
         uses: actions/upload-artifact@v4
         with:
-          name: KABRA-Android-v06
-          path: artifacts/KABRA-Android-v06.apk
+          name: KABRA-Android-v07
+          path: artifacts/KABRA-Android-v07.apk
           if-no-files-found: error
