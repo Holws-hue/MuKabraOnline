@@ -315,3 +315,86 @@ Set-Content -Path $loginPath -Value $scene -Encoding utf8
 Write-Host 'KABRA v10: la ventana de rechazo no queda oculta por errores posteriores.'
 
 Write-Host 'KABRA v10: errores legibles y carga simplificada, sin texto dorado ni barras.'
+
+# KABRA v11: barra REAL dibujada por MonoGame, nunca incrustada en la imagen.
+# El progreso ya existe en LoadingScreenView.Progress, informado por LoadScene.
+$viewPath = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$view = Get-Content $viewPath -Raw
+$startMarker='        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)'
+$endMarker='        private void DrawTitle(SpriteBatch sb, int barY, float a)'
+$start=$view.IndexOf($startMarker,[StringComparison]::Ordinal)
+$end=if($start -ge 0){$view.IndexOf($endMarker,$start,[StringComparison]::Ordinal)}else{-1}
+if($start -lt 0 -or $end -lt $start){throw 'No se encontro vista sencilla KABRA v10, revisar antes de editar'}
+$newOverlay=@'
+        // Panel de progreso de interfaz: independiente de la textura de fondo.
+        // Usa el avance REAL informado por las tareas de descarga y extraccion.
+        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)
+        {
+            int panelWidth = Math.Min(680, Math.Max(260, screen.X - 48));
+            int panelX = (screen.X - panelWidth) / 2;
+            int panelHeight = ShowStats ? 116 : 100;
+            int panelY = Math.Max(10, screen.Y - panelHeight - 22);
+            var panel = new Rectangle(panelX, panelY, panelWidth, panelHeight);
+            var pixel = GraphicsManager.Instance.Pixel;
+            sb.Draw(pixel, panel, Color.Black * (opacity * 0.82f));
+            sb.Draw(pixel, new Rectangle(panelX, panelY, panelWidth, 1),
+                new Color(165, 110, 190) * opacity);
+
+            string headline = "Cargando";
+            OrnateDraw.Text(sb, headline, new Vector2(panelX + 16, panelY + 9),
+                17f, OrnateStyle.TextLight, opacity, bold: true);
+            string percentText = $"{(int)MathF.Round(_progress * 100f)}%";
+            float percentageWidth = OrnateDraw.Measure(percentText, 17f).X;
+            OrnateDraw.Text(sb, percentText,
+                new Vector2(panelX + panelWidth - 17 - percentageWidth, panelY + 9),
+                17f, OrnateStyle.TextLight, opacity, bold: true);
+
+            var channel = new Rectangle(panelX + 16, panelY + 37, panelWidth - 32, 13);
+            sb.Draw(pixel, channel, new Color(38, 37, 49) * opacity);
+            int fillWidth = (int)MathF.Round(channel.Width * MathHelper.Clamp(_shownProgress, 0f, 1f));
+            if (fillWidth > 0)
+            {
+                sb.Draw(pixel, new Rectangle(channel.X, channel.Y, fillWidth, channel.Height),
+                    new Color(160, 82, 197) * opacity);
+                sb.Draw(pixel, new Rectangle(channel.X, channel.Y, fillWidth, 2),
+                    new Color(230, 184, 255) * opacity);
+            }
+
+            string status = string.IsNullOrWhiteSpace(StatusText) ? "Preparando archivos..." : StatusText.Trim();
+            if (status.Length > 65) status = status.Substring(0, 62) + "...";
+            OrnateDraw.Text(sb, status, new Vector2(panelX + 16, panelY + 56),
+                12f, OrnateStyle.TextLight, opacity);
+
+            // Estadisticas solo cuando se descargan bytes realmente.
+            if (ShowStats)
+            {
+                string size = string.IsNullOrWhiteSpace(SizeText) ? "Calculando tamaño..." : SizeText;
+                string speed = string.IsNullOrWhiteSpace(SpeedText) ? "" : SpeedText;
+                string eta = string.IsNullOrWhiteSpace(EtaText) ? "" : EtaText;
+                OrnateDraw.Text(sb, size, new Vector2(panelX + 16, panelY + 82),
+                    11f, OrnateStyle.TextLight, opacity);
+                if (!string.IsNullOrEmpty(speed))
+                    OrnateDraw.Text(sb, speed, new Vector2(panelX + panelWidth / 2f - 30, panelY + 82),
+                        11f, OrnateStyle.TextLight, opacity);
+                if (!string.IsNullOrEmpty(eta))
+                {
+                    float width = OrnateDraw.Measure(eta, 11f).X;
+                    OrnateDraw.Text(sb, eta, new Vector2(panelX + panelWidth - width - 16, panelY + 82),
+                        11f, OrnateStyle.TextLight, opacity);
+                }
+            }
+        }
+
+'@
+$view=$view.Substring(0,$start)+$newOverlay+$view.Substring($end)
+Set-Content -Path $viewPath -Value $view -Encoding utf8
+
+# Datos de tamanio, velocidad y ETA ya existen; ocultarlos fuera de descarga
+# para no mostrar estadisticas viejas durante la extraccion.
+$loadPath = Join-Path $ClientDirectory 'Client.Main/Scenes/LoadScene.cs'
+$load = Get-Content $loadPath -Raw
+$anchor = '_loadingView.StatusText = progress.StatusText;'
+if (!$load.Contains($anchor)) { throw 'No se encontro el enlace de estado en LoadScene' }
+$load=$load.Replace($anchor,$anchor+[Environment]::NewLine+'            _loadingView.ShowStats = progress.IsDownloading;')
+Set-Content -Path $loadPath -Value $load -Encoding utf8
+Write-Host 'KABRA v11: panel real de descarga/extraer, porcentaje, bytes, velocidad y ETA, por separado de imagen.'
