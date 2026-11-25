@@ -102,3 +102,91 @@ $scene=$scene.Substring(0,$first)+'MuGame.ScheduleOnMainThread(() => { _ = _netw
 $scene=$scene.Replace('Closing game after connection lost message.', 'Reintentando al aceptar mensaje de conexión interrumpida.')
 Set-Content -Path $scenePath -Value $scene -Encoding utf8
 Write-Host 'Reconexión manual habilitada al aceptar el aviso; sin bucles de reintento.'
+
+# v09: stackalloc NO garantiza bytes en cero. Ambos campos S6 de 10 bytes
+# deben completarse con 0 antes del XOR3 para no alterar credenciales cortas.
+$packetPath=Join-Path $ClientDirectory 'Client.Main/Networking/PacketHandling/PacketBuilder.cs'
+$packetSrc=Get-Content $packetPath -Raw
+$loginConstructor='var packet = new LoginShortPassword(memory);'
+if (!$packetSrc.Contains($loginConstructor)) { throw 'No se encontró constructor LoginShortPassword' }
+$packetSrc=$packetSrc.Replace($loginConstructor, 'memory.Span.Clear();'+[Environment]::NewLine+'            '+$loginConstructor)
+$uSpan='Span<byte> userSpan = stackalloc byte[packet.Username.Length];'
+$pSpan='Span<byte> passSpan = stackalloc byte[packet.Password.Length];'
+if (!$packetSrc.Contains($uSpan) -or !$packetSrc.Contains($pSpan)) { throw 'No se encontraron campos de 10 bytes' }
+$packetSrc=$packetSrc.Replace($uSpan,$uSpan+[Environment]::NewLine+'            userSpan.Clear();')
+$packetSrc=$packetSrc.Replace($pSpan,$pSpan+[Environment]::NewLine+'            passSpan.Clear();')
+Set-Content -Path $packetPath -Value $packetSrc -Encoding utf8
+
+# Impedir un segundo envío si el primer login aún está autenticando.
+$netPath=Join-Path $ClientDirectory 'Client.Main/Networking/NetworkManager.cs'
+$netSrc=Get-Content $netPath -Raw
+$oldGuard='if (_currentState != ClientConnectionState.ConnectedToGameServer && _currentState != ClientConnectionState.Authenticating)'
+$newGuard='if (_currentState != ClientConnectionState.ConnectedToGameServer)'
+if (!$netSrc.Contains($oldGuard)) { throw 'El estado de login de NetworkManager cambió' }
+$netSrc=$netSrc.Replace($oldGuard,$newGuard)
+# Un rechazo de credenciales no es un error de transporte: evita dos mensajes de error.
+$oldFailure='OnErrorOccurred($"Login failed: {reasonString}");'
+if (!$netSrc.Contains($oldFailure)) { throw 'No se encontró alerta duplicada del login' }
+$netSrc=$netSrc.Replace($oldFailure,'// KABRA: el rechazo lo muestra LoginFailed con código exacto; sin duplicar NetworkError.')
+Set-Content -Path $netPath -Value $netSrc -Encoding utf8
+Write-Host 'KABRA v09: login normalizado, sin bytes residuales ni intentos duplicados.'
+
+# v09: el Main.exe original envía Ping C3 0E 00 tras F1 00.
+# Se observó en PCAP y se descifró con SimpleModulus + XOR32 estándar:
+# transmite TickCount y velocidades 0/0 antes de elegir personaje.
+$packetSrc=Get-Content $packetPath -Raw
+$pingAnchor='        public static int BuildRequestCharacterListPacket('
+if (!$packetSrc.Contains($pingAnchor)) { throw 'No se encontró punto para Ping S6' }
+$pingCode=@'
+        // Ping del protocolo MU S6: C3 0C 0E 00, TickCount LE, velocidades 0 hasta elegir personaje.
+        public static int BuildKabraInitialPingPacket(IBufferWriter<byte> writer)
+        {
+            const int length = 12;
+            var memory = writer.GetMemory(length).Slice(0, length);
+            var span = memory.Span;
+            span.Clear();
+            span[0] = 0xC3;
+            span[1] = length;
+            span[2] = 0x0E;
+            span[3] = 0x00;
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(
+                span.Slice(4, 4), unchecked((uint)Environment.TickCount));
+            return length;
+        }
+
+'@
+$packetSrc=$packetSrc.Replace($pingAnchor,$pingCode+$pingAnchor)
+Set-Content -Path $packetPath -Value $packetSrc -Encoding utf8
+
+$netSrc=Get-Content $netPath -Raw
+$readyAnchor='            UpdateState(ClientConnectionState.ConnectedToGameServer);'
+# La primera ocurrencia está dentro de ProcessGameServerEntered, antes de login.
+$index=$netSrc.IndexOf('internal void ProcessGameServerEntered()', [StringComparison]::Ordinal)
+if ($index -lt 0) { throw 'Falta ProcessGameServerEntered' }
+$ready=$netSrc.IndexOf($readyAnchor,$index,[StringComparison]::Ordinal)
+if ($ready -lt 0) { throw 'Falta estado ConnectedToGameServer tras bienvenida' }
+$netSrc=$netSrc.Substring(0,$ready)+'            _ = SendKabraInitialPingAsync();'+[Environment]::NewLine+$netSrc.Substring($ready)
+$helperAnchor='        internal void ProcessLoginSuccess()'
+if (!$netSrc.Contains($helperAnchor)) { throw 'Falta punto de insercion para Ping inicial' }
+$helper=@'
+        // Un solo Ping por conexión. No modifica credenciales ni controles del GameServer.
+        private async Task SendKabraInitialPingAsync()
+        {
+            try
+            {
+                if (_connectionManager.IsConnected)
+                {
+                    await _connectionManager.Connection.SendAsync(
+                        () => PacketBuilder.BuildKabraInitialPingPacket(_connectionManager.Connection.Output));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo enviar Ping inicial de KABRA.");
+            }
+        }
+
+'@
+$netSrc=$netSrc.Replace($helperAnchor,$helper+$helperAnchor)
+Set-Content -Path $netPath -Value $netSrc -Encoding utf8
+Write-Host 'KABRA: Ping inicial real del cliente Windows agregado con límite de un envío por conexion.'

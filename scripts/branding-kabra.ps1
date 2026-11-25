@@ -121,4 +121,39 @@ foreach($name in $levels.Keys){
   Make-Icon (Join-Path $dir 'ic_launcher_foreground.png') $fg $true
   Make-Icon (Join-Path $dir 'ic_launcher_background.png') $fg $false $true
 }
+
+# Imagen de cabra proporcionada para KABRA. Se aplica ANTES de la compilacion y firma.
+$logoEncoded = Join-Path (Split-Path -Parent $PSScriptRoot) 'branding/logo_kabra_64.png.base64'
+if (!(Test-Path $logoEncoded)) { throw 'Falta logo de cabra original de KABRA' }
+$rawLogo=[Convert]::FromBase64String((Get-Content $logoEncoded -Raw).Trim())
+if ($rawLogo.Length -lt 2000) { throw 'Logo de KABRA esta incompleto' }
+$expected='448c1b580c94d7dc01f8e3862c956b884433f25efd9f53846db49341020ba7f5'
+$actual=[Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($rawLogo)).ToLowerInvariant()
+if ($actual -ne $expected) { throw 'El PNG del logo no pasa validacion SHA256' }
+$stream=[System.IO.MemoryStream]::new($rawLogo,0,$rawLogo.Length,$false)
+$logo=[System.Drawing.Image]::FromStream($stream)
+try {
+ foreach ($name in $levels.Keys) {
+   $size=$levels[$name];$dir=Join-Path $root "mipmap-$name"
+   foreach($kind in @('ic_launcher','ic_launcher_foreground','ic_launcher_background')) {
+     $side= if ($kind -eq 'ic_launcher') { $size } else { [int]($size*2.25) }
+     $output=Join-Path $dir ($kind+'.png')
+     $bmp=[System.Drawing.Bitmap]::new($side,$side)
+     $g=New-Graphics $bmp
+     try {
+       if($kind -eq 'ic_launcher_background'){
+         $g.Clear([System.Drawing.Color]::FromArgb(14,8,24))
+       } else {
+         $g.Clear([System.Drawing.Color]::Transparent)
+         $square= if($kind -eq 'ic_launcher_foreground'){[int]($side*.70)} else {$side}
+         $position=[int](($side-$square)/2)
+         $g.DrawImage($logo,$position,$position,$square,$square)
+       }
+       $bmp.Save($output,[System.Drawing.Imaging.ImageFormat]::Png)
+     } finally {$g.Dispose();$bmp.Dispose()}
+   }
+ }
+} finally {$logo.Dispose();$stream.Dispose()}
+Write-Host 'MU KABRA v08: cabra original en iconos launcher y adaptive; hash verificado.'
+
 Write-Host "MU KABRA: imagen de inicio y recursos de icono Android generados."
