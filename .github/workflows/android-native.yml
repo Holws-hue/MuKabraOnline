@@ -64,7 +64,7 @@ jobs:
       - name: Compilar APK Android nativo Debug
         shell: pwsh
         working-directory: upstream
-        run: dotnet publish MuAndroid/MuAndroid.csproj -f net10.0-android -c Debug -r android-arm64 -p:AndroidPackageFormats=apk -p:RestoreMonoGameTools=false -p:EmbedAssembliesIntoApk=true
+        run: dotnet publish MuAndroid/MuAndroid.csproj -f net10.0-android -c Debug -r android-arm64 --disable-build-servers -m:1 -p:BuildInParallel=false -p:UseSharedCompilation=false -p:AndroidPackageFormats=apk -p:RestoreMonoGameTools=false -p:EmbedAssembliesIntoApk=true
       - name: Localizar y revisar APK
         shell: pwsh
         run: |
