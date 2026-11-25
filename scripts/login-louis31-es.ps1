@@ -54,3 +54,38 @@ $cm=$cm.Replace('"✔️ Socket connected to {EndPoint}. Socket HashCode: {HashC
  '"Conexión con KABRA establecida."')
 Set-Content -Path $cmPath -Value $cm -Encoding utf8
 Write-Host 'KABRA: paquete de login corto, interfaz castellana, direcciones no visibles.'
+
+# Mensajes de error en español sin exponer infraestructura ni credenciales.
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show("Please enter Username and Password.");' 'MessageWindow.Show("Ingresá tu cuenta y contraseña.");'
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show($"Cannot login in state: {_networkManager.CurrentState}");' 'MessageWindow.Show("Todavía no hay conexión con el servidor KABRA.");'
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show("Error preparing character selection scene.");' 'MessageWindow.Show("No se pudo abrir la selección de personajes.");'
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show("Error receiving character list data.");' 'MessageWindow.Show("No se pudo recibir la lista de personajes.");'
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show($"Network Error: {errorMessage}");' 'MessageWindow.Show("Error de conexión con MU KABRA. Revisá la red o la configuración del cliente.");'
+Patch 'Client.Main/Scenes/LoginScene.cs' '"Status: Logged In - Requesting Characters..."' '"KABRA | Cargando personajes..."'
+Patch 'Client.Main/Scenes/LoginScene.cs' '"Status: Login Failed!"' '"KABRA | Acceso rechazado"'
+Patch 'Client.Main/Scenes/LoginScene.cs' '"Account is already connected."' '"La cuenta ya está conectada."'
+Patch 'Client.Main/Scenes/LoginScene.cs' '"Login Failed. Check credentials or server status."' '"No se pudo iniciar sesión. Comprobá usuario, contraseña y versión del cliente."'
+Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show(messageToShow);' 'MessageWindow.Show(messageToShow);'
+
+# Bloquear doble envío mientras autentica para prevenir el antiflood de Louis.
+Patch 'Client.Main/Scenes/LoginScene.cs' 'if (_networkManager.CurrentState == ClientConnectionState.ConnectedToGameServer ||' 'if (_networkManager.CurrentState == ClientConnectionState.ConnectedToGameServer &&'
+Patch 'Client.Main/Scenes/LoginScene.cs' '                _networkManager.CurrentState == ClientConnectionState.Authenticating)' '                _networkManager.CurrentState != ClientConnectionState.Authenticating)'
+# La segunda condición se vuelve tautológica pero mantiene el flujo y evita el segundo login.
+
+# Las cuentas y contraseñas de la Season 6 usan 10 bytes ANSI.
+$anchor='if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))'
+$source=Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$src=Get-Content $source -Raw
+$needle='                _logger.LogInformation("Login attempt from dialog for user: {Username}", username);'
+$replacement=@'
+                if (username.Length > 10 || password.Length > 10)
+                {
+                    MessageWindow.Show("Máximo 10 caracteres para la cuenta y la contraseña.");
+                    return;
+                }
+                _logger.LogInformation("Solicitud de login KABRA recibida.");
+'@
+if (!$src.Contains($needle)) { throw 'No se encontró control de envío login' }
+$src=$src.Replace($needle,$replacement.TrimEnd())
+Set-Content -Path $source -Value $src -Encoding utf8
+Write-Host 'Interfaz de login española, evita duplicados y datos sensibles visibles.'
