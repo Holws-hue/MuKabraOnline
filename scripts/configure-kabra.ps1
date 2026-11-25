@@ -24,12 +24,12 @@ if (![string]::IsNullOrWhiteSpace($env:KABRA_CLIENT_SERIAL)) {
 $cfg | ConvertTo-Json -Depth 100 | Set-Content -Path $settingsPath -Encoding utf8
 
 $project = Get-Content $projectPath -Raw
-$project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<ApplicationId>com.kabraonline.inicio05</ApplicationId>')
-$project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.5-inicio-es</ApplicationDisplayVersion>')
-$project = $project.Replace('<ApplicationVersion>1</ApplicationVersion>', '<ApplicationVersion>5</ApplicationVersion>')
+$project = $project.Replace('<ApplicationId>MuMono.MuMono</ApplicationId>', '<ApplicationId>com.kabraonline.inicio06</ApplicationId>')
+$project = $project.Replace('<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>', '<ApplicationDisplayVersion>0.6-inicio-es</ApplicationDisplayVersion>')
+$project = $project.Replace('<ApplicationVersion>1</ApplicationVersion>', '<ApplicationVersion>6</ApplicationVersion>')
 Set-Content $projectPath -Value $project -Encoding utf8
 $manifest = Get-Content $manifestPath -Raw
-$manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.inicio05"')
+$manifest = $manifest.Replace('package="MuMono.MuMono"', 'package="com.kabraonline.inicio06"')
 $manifest = $manifest.Replace('android:label="MuMono"', 'android:label="MU KABRA ONLINE"')
 Set-Content $manifestPath -Value $manifest -Encoding utf8
 Write-Output "Configuracion de KABRA ONLINE aplicada. Endpoint no mostrado."

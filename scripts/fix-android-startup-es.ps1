@@ -47,6 +47,8 @@ $loadPath=Join-Path $ClientDirectory 'Client.Main/Scenes/LoadScene.cs'
 $load=Get-Content $loadPath -Raw
 $replace=@{
   '"Initializing..."'='"Iniciando MU KABRA..."';
+  'Title = "Game Data"'='Title = "Archivos de KABRA"';
+  '"Extracting: {entry.Name}"'='"Preparando: {entry.Name}"';
   'Subtitle = "Preparing"'='Subtitle = "Preparando KABRA"';
   '"Assets found – skipping download."'='"Archivos encontrados. Iniciando KABRA..."';
   '"Connecting..."'='"Conectando a KABRA..."';
@@ -95,3 +97,45 @@ $roster=$roster.Replace('"Delete"','"Eliminar"')
 Set-Content -Path $rosterPath -Value $roster -Encoding utf8
 
 Write-Host 'KABRA OK: personajes y controles de seleccion traducidos al español.'
+
+# Red de seguridad: aunque otra ruta abra ServerConfigScene, Android salta al login.
+$serverConfigPath=Join-Path $ClientDirectory 'Client.Main/Scenes/ServerConfigScene.cs'
+$serverConfig=Get-Content $serverConfigPath -Raw
+$updateAnchor='        public override void Update(GameTime gameTime)'
+if (!$serverConfig.Contains($updateAnchor)) { throw 'No se encontró punto de protección de ServerConfigScene.' }
+$androidGuard=@'
+        public override void AfterLoad()
+        {
+            base.AfterLoad();
+            if (OperatingSystem.IsAndroid())
+            {
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new LoginScene()));
+            }
+        }
+
+'@
+$serverConfig=$serverConfig.Replace($updateAnchor,$androidGuard+$updateAnchor)
+Set-Content -Path $serverConfigPath -Value $serverConfig -Encoding utf8
+
+# No avanzar a una escena rota si no se pudieron cargar los recursos del juego.
+$load=Get-Content $loadPath -Raw
+$oldStatus='UpdateProgress(p => p.StatusText = $"Error: {ex.Message}");'
+$oldTransition='await TransitionToNextSceneAsync(CancellationToken.None);'
+if (!$load.Contains($oldStatus) -or !$load.Contains($oldTransition)) {
+    throw 'Cambió el manejador de errores de LoadScene; revisar antes de aplicar.'
+}
+$load=$load.Replace($oldStatus, 'UpdateProgress(p => p.StatusText = "Error al preparar KABRA. Revisá la conexión y reiniciá la aplicación.");')
+$load=$load.Replace($oldTransition, 'return;')
+Set-Content -Path $loadPath -Value $load -Encoding utf8
+
+# Corregir también textos persistentes del módulo de carga y consejos.
+$tipPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$tip=Get-Content $tipPath -Raw
+if (!$tip.Contains('"TIP"')) { throw 'No se encontró etiqueta TIP.' }
+$tip=$tip.Replace('"TIP"','"CONSEJO"')
+Set-Content -Path $tipPath -Value $tip -Encoding utf8
+$loadingControlPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/LoadingScreenControl.cs'
+$loadingControl=Get-Content $loadingControlPath -Raw
+$loadingControl=$loadingControl.Replace('"Loading..."','"Cargando..."')
+Set-Content -Path $loadingControlPath -Value $loadingControl -Encoding utf8
+Write-Host 'KABRA v06: acceso directo reforzado, error de carga visible y consejos en español.'
