@@ -65,3 +65,33 @@ if ((Get-Content $loadPath -Raw).Contains('nextSceneType = typeof(ServerConfigSc
     throw 'Fallo: Android aún envía al menú de IP/Port.'
 }
 Write-Host 'KABRA OK: Android pasa al login sin pantalla IP/Port y muestra textos iniciales en español.'
+
+
+# Preparar también la pantalla de elección de personajes en español.
+$selectPath=Join-Path $ClientDirectory 'Client.Main/Scenes/SelectCharacterScene.cs'
+$select=Get-Content $selectPath -Raw
+$translations=@{
+  '"Loading Characters..."'='"Cargando personajes..."';
+  'new OrnateButtonControl("ENTER GAME"'='new OrnateButtonControl("ENTRAR AL MUNDO"';
+  'new OrnateButtonControl("Back"'='new OrnateButtonControl("VOLVER"';
+  '"Initializing Character Selection..."'='"Preparando selección de personajes..."';
+  '"Select World Initialized."'='"Preparando los personajes de KABRA..."';
+  '"Character Objects Ready."'='"Personajes preparados"';
+  '"No characters found on this account."'='"No hay personajes en esta cuenta."';
+  '"Error loading character selection."'='"Error al cargar los personajes"';
+  '"Character Selection Ready."'='"Personajes disponibles"';
+  '$"Entering game as {characterName}..."'='$"Entrando al mundo con {characterName}..."';
+  '"Returning to login..."'='"Volviendo al inicio..."';
+}
+foreach ($key in $translations.Keys) { $select=$select.Replace($key,$translations[$key]) }
+Set-Content -Path $selectPath -Value $select -Encoding utf8
+
+$rosterPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/SelectCharacter/CharacterRosterWindow.cs'
+$roster=Get-Content $rosterPath -Raw
+$roster=$roster.Replace('Title = "CHARACTERS";','Title = "PERSONAJES";')
+$roster=$roster.Replace('{MaxSlots} characters','{MaxSlots} personajes')
+$roster=$roster.Replace('"Create Character"','"Crear personaje"')
+$roster=$roster.Replace('"Delete"','"Eliminar"')
+Set-Content -Path $rosterPath -Value $roster -Encoding utf8
+
+Write-Host 'KABRA OK: personajes y controles de seleccion traducidos al español.'
