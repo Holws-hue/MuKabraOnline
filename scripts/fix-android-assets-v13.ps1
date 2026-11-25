@@ -80,8 +80,10 @@ if(!$s.Contains($anchor)){throw 'No se encontro inicio de extraccion'}
 $validate=@'
             using (var zip = ZipFile.OpenRead(localZip))
             {
-                if (!zip.Entries.Any(entry => entry.Name.Equals("Gate.bmd", StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidDataException("El archivo descargado no tiene Gate.bmd; se necesitan recursos del cliente, no Data de GameServer.");
+                bool hasGate = zip.Entries.Any(entry => entry.Name.Equals("Gate.bmd", StringComparison.OrdinalIgnoreCase));
+                bool hasMaps = zip.Entries.Any(entry => entry.FullName.Replace('\\', '/').Split('/').Any(part => part.StartsWith("World", StringComparison.OrdinalIgnoreCase)));
+                if (!hasGate || !hasMaps)
+                    throw new InvalidDataException("El ZIP no tiene datos completos: faltan Gate.bmd o mapas World. No uses el Data.zip del GameServer.");
             }
 
 '@
@@ -94,6 +96,8 @@ $completion=@'
             await ExtractZipWithProgressAsync(localZip, extractPath, ct);
             if (!File.Exists(Path.Combine(extractPath, "Gate.bmd")))
                 throw new InvalidDataException("Falta Gate.bmd tras la extraccion.");
+            if (!Directory.EnumerateDirectories(extractPath, "World*", SearchOption.TopDirectoryOnly).Any())
+                throw new InvalidDataException("La extraccion no contiene mapas World.");
             File.WriteAllText(Path.Combine(extractPath, ".kabra-assets-complete"), "OK");
 '@
 $s=$s.Replace($anchor,$completion.TrimEnd())
@@ -104,7 +108,8 @@ $newChecker=@'
         private static bool CheckAssetsExist(string dataPath)
         {
             return File.Exists(Path.Combine(dataPath, ".kabra-assets-complete"))
-                && File.Exists(Path.Combine(dataPath, "Gate.bmd"));
+                && File.Exists(Path.Combine(dataPath, "Gate.bmd"))
+                && Directory.EnumerateDirectories(dataPath, "World*", SearchOption.TopDirectoryOnly).Any();
         }
 
 '@
