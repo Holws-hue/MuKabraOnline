@@ -9,10 +9,10 @@ function Patch([string]$path,[string]$old,[string]$new,[bool]$required=$true) {
     Set-Content -Path $file -Value $s -Encoding utf8
   } elseif ($required) { throw "Texto esperado no encontrado en $path" }
 }
-# El cliente de OpenMU usa contraseña larga (60 bytes); los files Louis S6
-# esperan el paquete S6 de contraseña corta (50 bytes).
-Patch 'Client.Main/Networking/PacketHandling/PacketBuilder.cs' 'int length = LoginLongPassword.Length;' 'int length = LoginShortPassword.Length;'
-Patch 'Client.Main/Networking/PacketHandling/PacketBuilder.cs' 'var packet = new LoginLongPassword(memory);' 'var packet = new LoginShortPassword(memory);'
+# Louis S6 (GameServer Season6 EN): estructura de password[20].
+# Mantener el LoginLongPassword original: el formato corto desplaza los
+# offsets de ClientVersion y ClientSerial y puede devolver F1:01 = 006.
+# LoginLongPassword tiene 60 bytes; no convertirlo a LoginShortPassword.
 
 Patch 'Client.Main/Networking/Services/LoginService.cs' "Sending login packet for user '{Username}'..." 'Enviando solicitud de acceso KABRA...' $false
 Patch 'Client.Main/Networking/NetworkManager.cs' '"Sending login request for user: {Username}", username' '"Solicitando acceso a MU KABRA ONLINE"'
@@ -53,7 +53,7 @@ $cm=$cm.Replace('"🔌 Attempting connection infrastructure setup for {Host}:{Po
 $cm=$cm.Replace('"✔️ Socket connected to {EndPoint}. Socket HashCode: {HashCode}", endPoint, newSocketConn.GetHashCode()',
  '"Conexión con KABRA establecida."')
 Set-Content -Path $cmPath -Value $cm -Encoding utf8
-Write-Host 'KABRA: paquete de login corto, interfaz castellana, direcciones no visibles.'
+Write-Host 'KABRA: paquete de login de 60 bytes, interfaz castellana, direcciones no visibles.'
 
 # Mensajes de error en español sin exponer infraestructura ni credenciales.
 Patch 'Client.Main/Scenes/LoginScene.cs' 'MessageWindow.Show("Please enter Username and Password.");' 'MessageWindow.Show("Ingresá tu cuenta y contraseña.");'
@@ -107,7 +107,7 @@ Write-Host 'Reconexión manual habilitada al aceptar el aviso; sin bucles de rei
 # deben completarse con 0 antes del XOR3 para no alterar credenciales cortas.
 $packetPath=Join-Path $ClientDirectory 'Client.Main/Networking/PacketHandling/PacketBuilder.cs'
 $packetSrc=Get-Content $packetPath -Raw
-$loginConstructor='var packet = new LoginShortPassword(memory);'
+$loginConstructor='var packet = new LoginLongPassword(memory);'
 if (!$packetSrc.Contains($loginConstructor)) { throw 'No se encontró constructor LoginShortPassword' }
 $packetSrc=$packetSrc.Replace($loginConstructor, 'memory.Span.Clear();'+[Environment]::NewLine+'            '+$loginConstructor)
 $uSpan='Span<byte> userSpan = stackalloc byte[packet.Username.Length];'
@@ -190,3 +190,14 @@ $helper=@'
 $netSrc=$netSrc.Replace($helperAnchor,$helper+$helperAnchor)
 Set-Content -Path $netPath -Value $netSrc -Encoding utf8
 Write-Host 'KABRA: Ping inicial real del cliente Windows agregado con límite de un envío por conexion.'
+
+# Verificación estática adicional antes de construir APK.
+$src=Get-Content $packetPath -Raw
+if (!$src.Contains('int length = LoginLongPassword.Length;') -or
+    !$src.Contains('var packet = new LoginLongPassword(memory);')) {
+    throw 'KABRA: GameServer Louis requiere formato de contraseña de 20 bytes.'
+}
+if ($src.Contains('var packet = new LoginShortPassword(memory);')) {
+    throw 'KABRA: quedó el formato de login corto incompatible con S6 Louis.'
+}
+Write-Host 'KABRA v12: LoginLongPassword C3:F1:01 (60 bytes), versión y serial en offsets S6.';
