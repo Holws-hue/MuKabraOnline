@@ -177,3 +177,104 @@ Write-Host 'KABRA v13: carpeta persistente Android, reintentos, ZIP validado, ex
 if ([string]::IsNullOrWhiteSpace($env:KABRA_ASSETS_ZIP_URL)) {
   Write-Warning 'No hay URL KABRA_ASSETS_ZIP_URL: se conserva el origen predeterminado del motor como prueba; necesita una descarga valida para jugar.'
 }
+
+# v13b: continuar descargas parcialmente recibidas en lugar de reiniciarlas.
+# Un archivo grande puede tardar mas de los 30 minutos del timeout original.
+$load=Get-Content $loadFile -Raw
+$timeoutOld='private static readonly TimeSpan HttpTimeout = TimeSpan.FromMinutes(30);'
+if(!$load.Contains($timeoutOld)){throw 'No se encontro timeout original'}
+$load=$load.Replace($timeoutOld,'private static readonly TimeSpan HttpTimeout = Timeout.InfiniteTimeSpan;')
+$start=$load.IndexOf('        private async Task DownloadSequentialAsync(',[StringComparison]::Ordinal)
+$end=if($start -ge 0){$load.IndexOf('        #endregion',$start,[StringComparison]::Ordinal)}else{-1}
+if($start -lt 0 -or $end -lt $start){throw 'Falta downloader secuencial'}
+$sequential=@'
+        // Descarga Android: un solo stream; reanuda por HTTP Range cuando el host lo permite.
+        private async Task DownloadSequentialAsync(string url, string destination, long expectedSize, CancellationToken ct)
+        {
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            try
+            {
+                long existing = File.Exists(destination) ? new FileInfo(destination).Length : 0;
+                // Un archivo supuestamente completo, pero sin la marca de instalado,
+                // debe comprobarse de nuevo desde cero (evita conservar ZIP corruptos).
+                if (expectedSize > 0 && existing >= expectedSize)
+                {
+                    SafeDeleteFile(destination);
+                    existing = 0;
+                }
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (existing > 0) request.Headers.Range = new RangeHeaderValue(existing, null);
+                using var response = await DownloadClient.Value.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, ct)
+                    .WaitAsync(TimeSpan.FromSeconds(65), ct);
+                if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    SafeDeleteFile(destination);
+                    throw new IOException("El servidor no puede reanudar este archivo. Se reiniciara la descarga.");
+                }
+                response.EnsureSuccessStatusCode();
+
+                bool resuming = existing > 0 && response.StatusCode == HttpStatusCode.PartialContent;
+                var range = response.Content.Headers.ContentRange;
+                if (resuming && (range == null || range.From != existing))
+                {
+                    SafeDeleteFile(destination);
+                    throw new IOException("El servidor devolvio un rango incompatible. Se reiniciara la descarga.");
+                }
+                if (!resuming && response.StatusCode != HttpStatusCode.OK)
+                    throw new IOException($"Respuesta de descarga inesperada: {(int)response.StatusCode}");
+
+                long startBytes = resuming ? existing : 0;
+                long total = resuming
+                    ? (range?.Length ?? (response.Content.Headers.ContentLength.HasValue
+                        ? startBytes + response.Content.Headers.ContentLength.Value : expectedSize))
+                    : (response.Content.Headers.ContentLength ?? expectedSize);
+                long downloaded = startBytes;
+                UpdateProgress(p =>
+                {
+                    p.DownloadedBytes = startBytes;
+                    p.TotalBytes = total;
+                    p.Progress = total > 0 ? Math.Min(1f, (float)startBytes / total) : 0f;
+                    p.IsDownloading = true;
+                    p.StatusText = resuming ? "Reanudando descarga de archivos..." : "Descargando archivos...";
+                });
+
+                await using var source = await response.Content.ReadAsStreamAsync(ct);
+                await using var output = new FileStream(destination,
+                    resuming ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None,
+                    BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var updateClock = Stopwatch.StartNew();
+                while (true)
+                {
+                    // Reintenta cuando la conexion se queda congelada en Android.
+                    int read = await source.ReadAsync(buffer.AsMemory(0, BufferSize), ct)
+                        .AsTask().WaitAsync(TimeSpan.FromSeconds(50), ct);
+                    if (read == 0) break;
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    downloaded += read;
+                    if (updateClock.Elapsed >= SpeedUpdateInterval)
+                    {
+                        ReportProgress(downloaded, total);
+                        updateClock.Restart();
+                    }
+                }
+                await output.FlushAsync(ct);
+                if (total > 0 && downloaded != total)
+                    throw new IOException($"Descarga incompleta: {downloaded} / {total} bytes.");
+                if (downloaded == 0)
+                    throw new IOException("La descarga no recibio ningun archivo.");
+                ReportProgress(downloaded, total > 0 ? total : downloaded);
+                UpdateProgress(p => p.StatusText = "Descarga completada");
+            }
+            finally { ArrayPool<byte>.Shared.Return(buffer); }
+        }
+
+'@
+$load=$load.Substring(0,$start)+$sequential+$load.Substring($end)
+# No borrar archivos parciales en cada reintento: reanudar si existe una respuesta 206.
+$line='                            SafeDeleteFile(localZip);'
+if(!$load.Contains($line)){throw 'No se encontro limpiador de reintentos'}
+$load=$load.Replace($line,'                            // Conservamos el archivo parcial para reanudar por HTTP Range.')
+Set-Content -Path $loadFile -Value $load -Encoding utf8
+Write-Host 'KABRA v13b: descarga reanudable, comprobacion Content-Range y control de inactividad.'
