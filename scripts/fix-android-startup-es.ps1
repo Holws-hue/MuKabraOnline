@@ -139,3 +139,33 @@ $loadingControl=Get-Content $loadingControlPath -Raw
 $loadingControl=$loadingControl.Replace('"Loading..."','"Cargando..."')
 Set-Content -Path $loadingControlPath -Value $loadingControl -Encoding utf8
 Write-Host 'KABRA v06: acceso directo reforzado, error de carga visible y consejos en español.'
+
+# KABRA v07 - Unico grupo de servidor; ID 9 KABRA PVP, sin EVENT
+$loginFile=Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$loginSource=Get-Content $loginFile -Raw
+$patches = @(
+    @('Controls.Add(_eventGroup);','// KABRA: no se agrega el grupo EVENT a la interfaz'),
+    @('_nonEventGroup.AddServer(i, "SERVIDORES");','_nonEventGroup.AddServer(i, "SERVIDOR");'),
+    @('_nonEventGroup.Margin = new Margin { Left = -groupOffset };','_nonEventGroup.Margin = new Margin { Left = 0 };'),
+    @('_serverList.AddServer((byte)server.ServerId, $"Server {server.ServerId}", server.LoadPercentage);','if (server.ServerId == 9) _serverList.AddServer((byte)server.ServerId, "KABRA PVP", server.LoadPercentage);'),
+    @('"No se pudo iniciar sesión. Comprobá usuario, contraseña y versión del cliente."','$"KABRA: acceso rechazado (código {(byte)reason}). Revisá los datos o comunicate con soporte."'),
+    @('MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());','MuGame.ScheduleOnMainThread(() => { _ = _networkManager.ForceReconnectToConnectServerAsync(); });')
+)
+foreach ($pair in $patches) {
+    if (!$loginSource.Contains($pair[0])) { throw "No se encontró código KABRA v07: $($pair[0])" }
+    $loginSource=$loginSource.Replace($pair[0],$pair[1])
+}
+Set-Content -Path $loginFile -Value $loginSource -Encoding utf8
+$serverListFile=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Login/ServerList.cs'
+$serverListSrc=Get-Content $serverListFile -Raw
+$serverAnchor = 'var server = servers[i];'
+if (!$serverListSrc.Contains($serverAnchor)) { throw 'No se encontró lista de servidores de KABRA' }
+$serverListSrc=$serverListSrc.Replace($serverAnchor,$serverAnchor+[Environment]::NewLine+'                if (server.ServerId != 9) continue;')
+Set-Content -Path $serverListFile -Value $serverListSrc -Encoding utf8
+if ([string]::IsNullOrWhiteSpace($env:KABRA_CLIENT_SERIAL)) {
+    Write-Warning 'La compilación CI requiere el ClientSerial original de MainInfo para autenticarse. No se publica en GitHub.'
+}
+elseif ($env:KABRA_CLIENT_SERIAL.Length -ne 16) {
+    throw 'ClientSerial privado inválido: requiere 16 caracteres.'
+}
+Write-Host 'KABRA v07: grupo SERVIDOR único, PVP code 9, mensaje con código de error del servidor.'
