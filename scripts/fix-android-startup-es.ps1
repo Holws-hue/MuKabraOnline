@@ -180,3 +180,82 @@ elseif ($env:KABRA_CLIENT_SERIAL.Length -ne 16) {
     throw 'ClientSerial privado inválido: requiere 16 caracteres.'
 }
 Write-Host 'KABRA v07: grupo SERVIDOR único, PVP code 9, mensaje con código de error del servidor.'
+
+# KABRA v10: legibilidad de rechazo; no se falsifica el resultado del servidor.
+$loginPath = Join-Path $ClientDirectory 'Client.Main/Scenes/LoginScene.cs'
+$login = Get-Content $loginPath -Raw
+$gold=@'
+            Controls.Add(new LabelControl
+            {
+                Text = "MU KABRA ONLINE",
+                Align = ControlAlign.HorizontalCenter,
+                Y = 18,
+                FontSize = 30,
+                TextColor = new Color(249, 209, 119),
+                Visible = true
+            });
+'@
+if (!$login.Contains($gold)) { throw 'Falta etiqueta dorada del login: revisar upstream antes de cambiarla' }
+$login=$login.Replace($gold,'')
+$login=$login.Replace('TextColor = Color.Yellow,','TextColor = Color.LightGray,')
+$login=$login.Replace('_statusLabel.TextColor = Color.Yellow;','_statusLabel.TextColor = Color.LightGray;')
+$oldError=@'
+                if (_statusLabel != null) _statusLabel.Text = "KABRA | Acceso rechazado";
+
+                string messageToShow = reason == LoginResponse.LoginResult.AccountAlreadyConnected
+                    ? "La cuenta ya está conectada."
+                    : $"KABRA: acceso rechazado (código {(byte)reason}). Revisá los datos o comunicate con soporte.";
+                MessageWindow.Show(messageToShow);
+'@
+$newError=@'
+                byte rawCode = (byte)reason;
+                if (_statusLabel != null)
+                {
+                    _statusLabel.Text = $"CODIGO {rawCode:D3}";
+                    _statusLabel.FontSize = 22;
+                    _statusLabel.TextColor = Color.White;
+                }
+                string detail = rawCode switch
+                {
+                    0 => "Contrasena incorrecta",
+                    2 => "Cuenta no valida",
+                    3 => "Cuenta ya conectada",
+                    4 => "Servidor lleno",
+                    5 => "Cuenta bloqueada",
+                    6 => "Version rechazada",
+                    7 => "Error de conexion",
+                    8 => "Demasiados intentos",
+                    14 => "Bloqueo temporal",
+                    _ => "Rechazo del servidor"
+                };
+                // Formato corto para moviles: el codigo no queda fuera de pantalla.
+                MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");
+                _logger.LogWarning("Codigo de login Louis31: {Code} ({Reason})", rawCode, reason);
+'@
+if (!$login.Contains($oldError)) { throw 'El texto de login ha cambiado; se requiere revision para conservar error real' }
+$login=$login.Replace($oldError,$newError)
+Set-Content -Path $loginPath -Value $login -Encoding utf8
+
+# KABRA v10: vista simple, sin titulo dorado, circulo, barra ni pie.
+$viewPath=Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+$view=Get-Content $viewPath -Raw
+$drawStart=$view.IndexOf('            DrawTitle(sb, barY, ui);',[StringComparison]::Ordinal)
+$drawEnd=$view.IndexOf('            if (intro < 1f)',$drawStart,[StringComparison]::Ordinal)
+if ($drawStart -lt 0 -or $drawEnd -le $drawStart) { throw 'Cambió la vista de carga. No aplicar reemplazo a ciegas.' }
+$view=$view.Substring(0,$drawStart)+'            DrawKabraSimpleLoading(sb, screen, ui);'+[Environment]::NewLine+[Environment]::NewLine+$view.Substring($drawEnd)
+$anchor='        private void DrawTitle(SpriteBatch sb, int barY, float a)'
+if (!$view.Contains($anchor)) { throw 'No existe DrawTitle para insertar el titulo simple' }
+$simple=@'
+        private void DrawKabraSimpleLoading(SpriteBatch sb, Point screen, float opacity)
+        {
+            const string text = "Cargando";
+            const float fontSize = 18f;
+            float width = OrnateDraw.Measure(text, fontSize).X;
+            OrnateDraw.Text(sb, text, new Vector2((screen.X - width) * 0.5f, screen.Y - 50),
+                fontSize, OrnateStyle.TextLight, opacity);
+        }
+
+'@
+$view=$view.Replace($anchor,$simple+$anchor)
+Set-Content -Path $viewPath -Value $view -Encoding utf8
+Write-Host 'KABRA v10: errores legibles y carga simplificada, sin texto dorado ni barras.'
