@@ -56,7 +56,7 @@ jobs:
           if ($load.Contains('nextSceneType = typeof(ServerConfigScene);')) { throw 'La APK todavia entra al editor IP/Port' }
           if (!$load.Contains('nextSceneType = typeof(LoginScene);')) { throw 'No se encontró el acceso directo a LoginScene' }
           $config = Get-Content upstream/MuAndroid/MuAndroid.csproj -Raw
-          if (!$config.Contains('com.kabraonline.inicio09')) { throw 'Version 0.6 sin ID de Android independiente' }
+          if (!$config.Contains('com.kabraonline.inicio10')) { throw 'Version 0.6 sin ID de Android independiente' }
           $view = Get-Content upstream/Client.Main/Controls/UI/Loading/LoadingScreenView.cs -Raw
           if (!$view.Contains('"CONSEJO"')) { throw 'El texto TIP sigue en ingles' }
           $login = Get-Content upstream/Client.Main/Scenes/LoginScene.cs -Raw
@@ -67,6 +67,11 @@ jobs:
           if (!$packet.Contains('memory.Span.Clear();')) { throw 'Login sin limpieza del paquete' }
           if (!$packet.Contains('userSpan.Clear();') -or !$packet.Contains('passSpan.Clear();')) { throw 'Login con buffers no inicializados' }
           if (!$packet.Contains('BuildKabraInitialPingPacket')) { throw 'Ping S6 ausente' }
+          $loadView = Get-Content upstream/Client.Main/Controls/UI/Loading/LoadingScreenView.cs -Raw
+          if ($loadView.Contains('DrawTitle(sb, barY, ui);') -or $loadView.Contains('DrawBar(sb, screen, barY, ui);')) { throw 'Quedaron barras o titulo amarillo' }
+          if (!$loadView.Contains('DrawKabraSimpleLoading(sb, screen, ui);')) { throw 'Falta Cargando simplificado' }
+          if (!$login.Contains('CODIGO {rawCode:D3}')) { throw 'No muestra codigo de login legible' }
+          if ($login.Contains('Text = "MU KABRA ONLINE"')) { throw 'Quedo el titulo dorado en el login' }
           $net = Get-Content upstream/Client.Main/Networking/NetworkManager.cs -Raw
           if (!$net.Contains('SendKabraInitialPingAsync')) { throw 'Ping inicial no conectado a F1 00' }
           $main = Get-Content upstream/Client.Main/MuGame.cs -Raw
@@ -126,11 +131,11 @@ jobs:
           $apk = Get-ChildItem upstream/MuAndroid/bin/Debug -Recurse -Filter *.apk | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $apk) { throw "Compilacion sin APK instalable" }
           Write-Output "APK compilado: $($apk.FullName); Bytes=$($apk.Length)"
-          Copy-Item $apk.FullName artifacts/KABRA-Android-v09.apk
+          Copy-Item $apk.FullName artifacts/KABRA-Android-v10.apk
       - name: Validar icono y firma Android con herramienta oficial
         shell: pwsh
         run: |
-          $apk = "artifacts/KABRA-Android-v09.apk"
+          $apk = "artifacts/KABRA-Android-v10.apk"
           if (!(Test-Path $apk)) { throw 'No existe el APK de salida' }
           $tool = Join-Path $env:ANDROID_HOME "build-tools/36.0.0/apksigner.bat"
           if (!(Test-Path $tool)) { throw "Falta apksigner oficial en $tool" }
@@ -148,6 +153,6 @@ jobs:
       - name: Publicar instalador de laboratorio
         uses: actions/upload-artifact@v4
         with:
-          name: KABRA-Android-v09
-          path: artifacts/KABRA-Android-v09.apk
+          name: KABRA-Android-v10
+          path: artifacts/KABRA-Android-v10.apk
           if-no-files-found: error
