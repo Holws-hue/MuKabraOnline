@@ -24,3 +24,12 @@ No se conecta ni modifica el GameServer, y no utiliza ninguna cuenta de jugadore
 - Obtener logs de handshake de una cuenta de pruebas; primero probar sin iniciar sesión.
 
 Si la compilación falla, usar los registros de **Actions**. Compilar un APK no prueba compatibilidad con KABRA.
+
+## Primer resultado (25/11/2026)
+
+- ✅ Compilación Android ARM64 en .NET 10 y MonoGame, APK Debug firmado mediante GitHub Actions: [run 45555318875](https://github.com/Holws-hue/MuKabraOnline/actions/runs/45555318875).
+- ✅ Instalador verificado como archivo APK válido; contiene librerías ARM64 y recursos de interfaz.
+- ✅ Conectividad TCP a ConnectServer 44405 y GameServer 55901 confirmada (sin credenciales), ver [diagnóstico](docs/PRUEBA_RED_2026-11-25.md).
+- ⚠️ **No está comprobado que el APK inicie sesión o permita jugar en Louis 31**. El servidor anuncia un handshake propio tipo D0/D2 anterior al login que el cliente MonoGame de OpenMU no implementa todavía.
+- ⚠️ Requiere datos gráficos de MU autorizados. Compilar con éxito no asegura que todos los mapas, personajes y animaciones carguen en Android.
+- 🔒 No incorporar contraseñas de usuarios en el código, APK ni flujos de GitHub Actions. Las credenciales de prueba solo se ingresarán localmente cuando el protocolo esté implementado.
