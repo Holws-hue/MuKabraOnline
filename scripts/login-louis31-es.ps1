@@ -102,3 +102,31 @@ $scene=$scene.Substring(0,$first)+'MuGame.ScheduleOnMainThread(() => { _ = _netw
 $scene=$scene.Replace('Closing game after connection lost message.', 'Reintentando al aceptar mensaje de conexión interrumpida.')
 Set-Content -Path $scenePath -Value $scene -Encoding utf8
 Write-Host 'Reconexión manual habilitada al aceptar el aviso; sin bucles de reintento.'
+
+# v09: stackalloc NO garantiza bytes en cero. Ambos campos S6 de 10 bytes
+# deben completarse con 0 antes del XOR3 para no alterar credenciales cortas.
+$packetPath=Join-Path $ClientDirectory 'Client.Main/Networking/PacketHandling/PacketBuilder.cs'
+$packetSrc=Get-Content $packetPath -Raw
+$loginConstructor='var packet = new LoginShortPassword(memory);'
+if (!$packetSrc.Contains($loginConstructor)) { throw 'No se encontró constructor LoginShortPassword' }
+$packetSrc=$packetSrc.Replace($loginConstructor, 'memory.Span.Clear();'+[Environment]::NewLine+'            '+$loginConstructor)
+$uSpan='Span<byte> userSpan = stackalloc byte[packet.Username.Length];'
+$pSpan='Span<byte> passSpan = stackalloc byte[packet.Password.Length];'
+if (!$packetSrc.Contains($uSpan) -or !$packetSrc.Contains($pSpan)) { throw 'No se encontraron campos de 10 bytes' }
+$packetSrc=$packetSrc.Replace($uSpan,$uSpan+[Environment]::NewLine+'            userSpan.Clear();')
+$packetSrc=$packetSrc.Replace($pSpan,$pSpan+[Environment]::NewLine+'            passSpan.Clear();')
+Set-Content -Path $packetPath -Value $packetSrc -Encoding utf8
+
+# Impedir un segundo envío si el primer login aún está autenticando.
+$netPath=Join-Path $ClientDirectory 'Client.Main/Networking/NetworkManager.cs'
+$netSrc=Get-Content $netPath -Raw
+$oldGuard='if (_currentState != ClientConnectionState.ConnectedToGameServer && _currentState != ClientConnectionState.Authenticating)'
+$newGuard='if (_currentState != ClientConnectionState.ConnectedToGameServer)'
+if (!$netSrc.Contains($oldGuard)) { throw 'El estado de login de NetworkManager cambió' }
+$netSrc=$netSrc.Replace($oldGuard,$newGuard)
+# Un rechazo de credenciales no es un error de transporte: evita dos mensajes de error.
+$oldFailure='OnErrorOccurred($"Login failed: {reasonString}");'
+if (!$netSrc.Contains($oldFailure)) { throw 'No se encontró alerta duplicada del login' }
+$netSrc=$netSrc.Replace($oldFailure,'// KABRA: el rechazo lo muestra LoginFailed con código exacto; sin duplicar NetworkError.')
+Set-Content -Path $netPath -Value $netSrc -Encoding utf8
+Write-Host 'KABRA v09: login normalizado, sin bytes residuales ni intentos duplicados.'
