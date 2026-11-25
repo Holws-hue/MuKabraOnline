@@ -120,3 +120,22 @@ namespace Client.Main.Controls.UI.Login
 Set-Content $muLogo -Value $logoSource -Encoding utf8
 
 Write-Output 'Identidad de KABRA aplicada a Android, login y logo UI.'
+
+
+# Mark all loading screens as MU KABRA, regardless of map illustration.
+$loadView = Join-Path $ClientDirectory 'Client.Main/Controls/UI/Loading/LoadingScreenView.cs'
+if (!(Test-Path $loadView)) { throw "Missing LoadingScreenView.cs" }
+$screenSource = Get-Content $loadView -Raw
+$footer = '            DrawFooter(sb, screen, barY, ui);'
+if (!$screenSource.Contains($footer)) { throw "Loading screen footer anchor missing" }
+$brandedFooter = @'
+            DrawFooter(sb, screen, barY, ui);
+            string kabraHeading = "MU KABRA ONLINE";
+            float headingWidth = OrnateDraw.Measure(kabraHeading, 34f).X;
+            OrnateDraw.Text(sb, kabraHeading,
+                new Vector2((screen.X - headingWidth) * 0.5f, 28f),
+                34f, OrnateStyle.Gold, ui, bold: true);
+'@
+$screenSource = $screenSource.Replace($footer, $brandedFooter.TrimEnd())
+Set-Content -Path $loadView -Value $screenSource -Encoding utf8
+Write-Host 'Brand MU KABRA aplicado también a todas las pantallas de carga.'
