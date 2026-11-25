@@ -7,6 +7,7 @@ on:
       - 'scripts/configure-kabra.ps1'
       - 'scripts/branding-kabra.ps1'
       - 'scripts/login-louis31-es.ps1'
+      - 'scripts/fix-android-startup-es.ps1'
       - 'patches/KabraLouis31Pipe.cs'
       - 'tests/Louis31Transport/**'
 jobs:
@@ -44,6 +45,9 @@ jobs:
       - name: Corregir login Louis31 y traducir al espanol
         shell: pwsh
         run: ./scripts/login-louis31-es.ps1
+      - name: Quitar dialogo IP/Port y traducir pantalla inicial
+        shell: pwsh
+        run: ./scripts/fix-android-startup-es.ps1
       - name: Preparar .NET 10
         uses: actions/setup-dotnet@v4
         with:
