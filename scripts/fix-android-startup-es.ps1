@@ -277,4 +277,41 @@ if($logo.Contains('Text = "MU KABRA ONLINE",')){
     Set-Content -Path $logoClass -Value $logo -Encoding utf8
 }
 
+
+# No ocultar el codigo del rechazo con la ventana de "conexion perdida" cuando Louis
+# cierra la sesion inmediatamente despues de rechazar el login.
+$scene=Get-Content $loginPath -Raw
+$field='        private bool _uiInitialized = false;'
+if(!$scene.Contains($field)){ throw 'No se encontro campo de UI de LoginScene' }
+$scene=$scene.Replace($field,'        private bool _kabraLoginRejected;'+[Environment]::NewLine+$field)
+$onState='                UpdateStatusLabel(newState);'
+if(!$scene.Contains($onState)){throw 'No se encontro actualizacion de estado de LoginScene'}
+$scene=$scene.Replace($onState,'                if (!_kabraLoginRejected || newState != ClientConnectionState.Disconnected) UpdateStatusLabel(newState);')
+if(!$scene.Contains('                if (showErrorAndExit)')){throw 'No se encontro aviso de desconexion'}
+$scene=$scene.Replace('                if (showErrorAndExit)','                if (showErrorAndExit && !_kabraLoginRejected)')
+$shown='                MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");'
+if(!$scene.Contains($shown)){throw 'No se encontro ventana de error legible'}
+$popup=@'
+                _kabraLoginRejected = true;
+                var rejectionWindow = MessageWindow.Show($"CODIGO {rawCode:D3}: {detail}");
+                if (rejectionWindow != null)
+                {
+                    rejectionWindow.Closed += (s, e) =>
+                    {
+                        _kabraLoginRejected = false;
+                        if (_networkManager?.CurrentState == ClientConnectionState.Disconnected)
+                        {
+                            // Reconexion manual tras aceptar el mensaje. No reintenta contraseña.
+                            _ = _networkManager.ForceReconnectToConnectServerAsync();
+                        }
+                    };
+                }
+'@
+$scene=$scene.Replace($shown,$popup.TrimEnd())
+$success='                _logger.LogInformation("UI received LoginSuccess.");'
+if(!$scene.Contains($success)){throw 'No se encontro evento LoginSuccess'}
+$scene=$scene.Replace($success,$success+[Environment]::NewLine+'                _kabraLoginRejected = false;')
+Set-Content -Path $loginPath -Value $scene -Encoding utf8
+Write-Host 'KABRA v10: la ventana de rechazo no queda oculta por errores posteriores.'
+
 Write-Host 'KABRA v10: errores legibles y carga simplificada, sin texto dorado ni barras.'
