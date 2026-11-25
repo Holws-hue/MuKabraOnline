@@ -33,3 +33,27 @@ $manifest = $manifest.Replace('android:label="MuMono"', 'android:label="KABRA ON
 Set-Content $manifestPath -Value $manifest -Encoding utf8
 Write-Output "Preparada configuracion de compilacion. Endpoint ConnectServer: ${hostname}:${port}."
 Write-Output "NOTA: esta preparacion no verifica la conectividad ni el protocolo Louis 31."
+
+# Parche Android: MonoGame Android no contiene Graphics.OcclusionQuery
+$profilerPath = Join-Path $ClientDirectory 'Client.Main/Controllers/RenderPassProfiler.cs'
+if (!(Test-Path $profilerPath)) { throw "No se encuentra RenderPassProfiler.cs" }
+$profiler = Get-Content $profilerPath -Raw
+$startToken = '    private static Microsoft.Xna.Framework.Graphics.OcclusionQuery _gpuFence;'
+$endToken = '    public static PassToken Start()'
+$startAt = $profiler.IndexOf($startToken, [StringComparison]::Ordinal)
+$endAt = $profiler.IndexOf($endToken, [StringComparison]::Ordinal)
+if ($startAt -lt 0 -or $endAt -lt $startAt) {
+  throw "No es posible localizar el bloque de GPU diagnostics: cambiar revision del motor antes de continuar"
+}
+$replacement = @'
+#if ANDROID
+    // El depurador de GPU no está soportado por MonoGame Android.
+    public static double GpuFenceTimeoutCount;
+    public static void WaitForGpu() { }
+#else
+'@
+$replacement += $profiler.Substring($startAt, $endAt - $startAt)
+$replacement += "`n#endif`n`n"
+$profiler = $profiler.Substring(0, $startAt) + $replacement + $profiler.Substring($endAt)
+Set-Content -Path $profilerPath -Value $profiler -Encoding utf8
+Write-Output 'GPU profiler parcheado: diagnostico de sincronizacion omitido en Android.'
