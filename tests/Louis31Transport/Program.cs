@@ -59,6 +59,16 @@ static class Program
         Check(decoded.Length == 12, "longitud de saludo");
         Check(decoded.AsSpan(0, 4).SequenceEqual(Hex("C1 0C F1 00")), "saludo real F1 00");
         Check(KabraLouis31Pipe.Encode(decoded).SequenceEqual(welcome), "recodificación byte a byte");
+
+        Check(decoded.AsSpan(7, 5).SequenceEqual(Hex("31 30 34 30 35")),
+              "versión real 10405 del MainInfo recuperada con XOR correctamente");
+        byte[] clientReply = Hex("D2 07 FF 9E 37 C4 4E CE 30 1C F8 2C 17 84 C9 0E 22 C6 D2 62 BD 47 E3 D9");
+        byte[] clientLogical = KabraLouis31Pipe.Decode(clientReply);
+        Check(clientLogical.AsSpan(0, 4).SequenceEqual(Hex("C3 18 F0 8F")),
+              "respuesta cliente original D2 tiene cifrado nuevo de cabecera");
+        Check(KabraLouis31Pipe.Encode(clientLogical).SequenceEqual(clientReply),
+              "respuesta cifrada D2 del cliente original reconstituida");
+
         Roundtrip("C1 04 F4 06");
         Roundtrip("C3 06 F1 01 01 01");
         Roundtrip("C2 00 06 F3 00 01");
