@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - "diagnostics/louis31_probe.py"
+      - "diagnostics/louis31_codec.py"
+      - "diagnostics/test_louis31_codec.py"
       - ".github/workflows/probe-louis31.yml"
   workflow_dispatch:
 jobs:
@@ -15,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validar sintaxis
         run: python3 -m py_compile diagnostics/louis31_probe.py
+      - name: Probar decoder Louis31 con paquetes observados
+        run: python3 -m unittest discover -v -s diagnostics -p "test_*.py"
       - name: Sondear lista de servidores y protocolo de inicio
         env:
           KABRA_HOST: 523.ddns.net
