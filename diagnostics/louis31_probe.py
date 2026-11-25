@@ -54,7 +54,7 @@ def connect_server():
         if hello[0] != 0xC1 or len(hello) < 4:
             print("Saludo desconocido, detengo el sondeo")
             return
-        if hello[2:4] != b"\\x00\\x01":
+        if hello[2:4] != bytes.fromhex("00 01"):
             print("No se reconoce el saludo 00 01, no se envían más paquetes")
             return
         s.sendall(bytes.fromhex("C1 04 F4 06"))
