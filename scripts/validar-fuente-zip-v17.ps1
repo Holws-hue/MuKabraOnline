@@ -20,8 +20,8 @@ try {
             if ([int]$resp.StatusCode -ne 206) {
                 throw "El archivo no permite continuar descargas por HTTP Range. GET bytes=0-1023 respondio $([int]$resp.StatusCode) en lugar de 206."
             }
-            $len=$resp.Content.Headers.ContentRange.Length
-            if (!$len.HasValue -or $len.Value -lt 100MB) {
+            $len=[long]$resp.Content.Headers.ContentRange.Length
+            if ($len -lt 100MB) {
                 throw "No se pudo verificar un archivo completo de recursos: Content-Range total=$len"
             }
             $stream=$resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
@@ -32,7 +32,7 @@ try {
                     throw 'El enlace no devuelve un ZIP real (cabecera PK 03 04); puede estar devolviendo una pagina HTML.'
                 }
             } finally { $stream.Dispose() }
-            Write-Host "FUENTE KABRA OK: HTTPS, Range=206, archivo ZIP, tamano $([Math]::Round($len.Value/1MB,1)) MiB"
+            Write-Host "FUENTE KABRA OK: HTTPS, Range=206, archivo ZIP, tamano $([Math]::Round($len/1MB,1)) MiB"
             Write-Host 'La cabecera es valida. La descarga completa y compatibilidad MonoGame requieren prueba real.'
         } finally { $resp.Dispose() }
     } finally { $req.Dispose() }
